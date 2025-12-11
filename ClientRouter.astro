@@ -32,9 +32,6 @@ const { fallback = 'animate' } = Astro.props;
 <script>
 	import type { Options } from 'astro:transitions/client';
 	import { supportsViewTransitions, navigate } from 'astro:transitions/client';
-	// NOTE: import from `astro/virtual-modules/prefetch.js` as `astro:prefetch` requires the `prefetch` config to be enabled
-	// @ts-ignore
-	import { init } from 'astro/virtual-modules/prefetch.js';
 
 	type Fallback = 'none' | 'animate' | 'swap';
 	let lastClickedElementLeavingWindow: EventTarget | null = null;
@@ -151,10 +148,5 @@ const { fallback = 'animate' } = Astro.props;
 			ev.preventDefault();
 			navigate(action, options);
 		});
-
-		// @ts-expect-error injected by vite-plugin-transitions for treeshaking
-		if (!__PREFETCH_DISABLED__) {
-			init({ prefetchAll: true });
-		}
 	}
 </script>
