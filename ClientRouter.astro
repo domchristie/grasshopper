@@ -1,34 +1,3 @@
----
-type Fallback = 'none' | 'animate' | 'swap';
-
-export interface Props {
-	fallback?: Fallback;
-	/** @deprecated handleForms is enabled by default in Astro 4.0
-	 *
-	 * Set `data-astro-reload` on your form to opt-out of the default behavior.
-	 */
-	handleForms?: boolean;
-}
-
-const { fallback = 'animate' } = Astro.props;
----
-
-<style is:global>
-	/* Route announcer */
-	.astro-route-announcer {
-		position: absolute;
-		left: 0;
-		top: 0;
-		clip: rect(0 0 0 0);
-		clip-path: inset(50%);
-		overflow: hidden;
-		white-space: nowrap;
-		width: 1px;
-		height: 1px;
-	}
-</style>
-<meta name="astro-view-transitions-enabled" content="true" />
-<meta name="astro-view-transitions-fallback" content={fallback} />
 <script>
 	import type { Options } from 'astro:transitions/client';
 	import { supportsViewTransitions, navigate } from 'astro:transitions/client';
