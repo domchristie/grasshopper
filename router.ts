@@ -462,13 +462,6 @@ async function transition(
 
 		const links = preloadStyleLinks(preparationEvent.newDocument);
 		links.length && !preparationEvent.signal.aborted && (await Promise.all(links));
-
-		if (import.meta.env.DEV && !preparationEvent.signal.aborted)
-			await prepareForClientOnlyComponents(
-				preparationEvent.newDocument,
-				preparationEvent.to,
-				preparationEvent.signal,
-			);
 	}
 	async function abortAndRecreateMostRecentTransition(): Promise<Transition> {
 		if (mostRecentTransition) {
@@ -669,62 +662,5 @@ if (inBrowser) {
 	for (const script of document.getElementsByTagName('script')) {
 		detectScriptExecuted(script);
 		script.dataset.astroExec = '';
-	}
-}
-
-// Keep all styles that are potentially created by client:only components
-// and required on the next page
-async function prepareForClientOnlyComponents(
-	newDocument: Document,
-	toLocation: URL,
-	signal: AbortSignal,
-) {
-	// Any client:only component on the next page?
-	if (newDocument.body.querySelector(`astro-island[client='only']`)) {
-		// Load the next page with an empty module loader cache
-		const nextPage = document.createElement('iframe');
-		// with srcdoc resolving imports does not work on webkit browsers
-		nextPage.src = toLocation.href;
-		nextPage.style.display = 'none';
-		document.body.append(nextPage);
-		// silence the iframe's console
-		// @ts-ignore
-		nextPage.contentWindow!.console = Object.keys(console).reduce((acc: any, key) => {
-			acc[key] = () => {};
-			return acc;
-		}, {});
-		await hydrationDone(nextPage);
-
-		const nextHead = nextPage.contentDocument?.head;
-		if (nextHead) {
-			// Collect the vite ids of all styles present in the next head
-			const viteIds = [...nextHead.querySelectorAll(`style[${VITE_ID}]`)].map((style) =>
-				style.getAttribute(VITE_ID),
-			);
-			// Copy required styles to the new document if they are from hydration.
-			viteIds.forEach((id) => {
-				const style = nextHead.querySelector(`style[${VITE_ID}="${id}"]`);
-				if (style && !newDocument.head.querySelector(`style[${VITE_ID}="${id}"]`)) {
-					newDocument.head.appendChild(style.cloneNode(true));
-				}
-			});
-		}
-
-		// return a promise that resolves when all astro-islands are hydrated
-		async function hydrationDone(loadingPage: HTMLIFrameElement) {
-			if (!signal.aborted) {
-				await new Promise((r) =>
-					loadingPage.contentWindow?.addEventListener('load', r, { once: true }),
-				);
-			}
-			return new Promise<void>(async (r) => {
-				for (let count = 0; count <= 20; ++count) {
-					if (signal.aborted) break;
-					if (!loadingPage.contentDocument!.body.querySelector('astro-island[ssr]')) break;
-					await new Promise((r2) => setTimeout(r2, 50));
-				}
-				r();
-			});
-		}
 	}
 }
