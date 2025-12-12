@@ -1,7 +1,6 @@
-import type { Options } from './types';
+import type { Fallback, Options } from './types';
 import { supportsViewTransitions, navigate } from './router';
 
-type Fallback = 'none' | 'animate' | 'swap';
 let lastClickedElementLeavingWindow: EventTarget | null = null;
 
 function getFallback(): Fallback {
