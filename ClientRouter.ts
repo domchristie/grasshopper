@@ -1,5 +1,5 @@
-import type { Options } from 'astro:transitions/client';
-import { supportsViewTransitions, navigate } from 'astro:transitions/client';
+import type { Options } from './types';
+import { supportsViewTransitions, navigate } from './router';
 
 type Fallback = 'none' | 'animate' | 'swap';
 let lastClickedElementLeavingWindow: EventTarget | null = null;
