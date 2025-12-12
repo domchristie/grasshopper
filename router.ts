@@ -19,7 +19,7 @@ type Transition = {
 	viewTransitionFinished?: () => void;
 };
 
-const inBrowser = import.meta.env.SSR === false;
+const inBrowser = true;
 
 // only update history entries that are managed by us
 // leave other entries alone and do not accidentally add state.
@@ -574,7 +574,7 @@ async function transition(
 let navigateOnServerWarned = false;
 
 export async function navigate(href: string, options?: Options) {
-	if (inBrowser === false) {
+	if (!inBrowser) {
 		if (!navigateOnServerWarned) {
 			// instantiate an error for the stacktrace to show to user.
 			const warning = new Error(
