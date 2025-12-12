@@ -1,4 +1,3 @@
-import { internalFetchHeaders } from 'virtual:astro:adapter-config/client';
 import type { TransitionBeforePreparationEvent } from './events.js';
 import { doPreparation, doSwap, TRANSITION_AFTER_SWAP } from './events.js';
 import { detectScriptExecuted } from './swap-functions.js';
@@ -100,11 +99,7 @@ async function fetchHTML(
 	init?: RequestInit,
 ): Promise<null | { html: string; redirected?: string; mediaType: DOMParserSupportedType }> {
 	try {
-		// Apply adapter-specific headers for internal fetches
 		const headers = new Headers(init?.headers);
-		for (const [key, value] of Object.entries(internalFetchHeaders) as [string, string][]) {
-			headers.set(key, value);
-		}
 		const res = await fetch(href, { ...init, headers });
 		const contentType = res.headers.get('content-type') ?? '';
 		// drop potential charset (+ other name/value pairs) as parser needs the mediaType
