@@ -1,6 +1,6 @@
 {
-  "name": "grasshopper",
-  "version": "1.0.0",
+  "name": "@domchristie/grasshopper",
+  "version": "0.0.1",
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -10,7 +10,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "devDependencies": {
     "esbuild": "^0.27.1"
   }
