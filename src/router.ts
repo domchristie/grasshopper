@@ -70,8 +70,6 @@ const PERSIST_ATTR = 'data-astro-transition-persist';
 const DIRECTION_ATTR = 'data-astro-transition';
 const OLD_NEW_ATTR = 'data-astro-transition-fallback';
 
-const VITE_ID = 'data-vite-dev-id';
-
 let parser: DOMParser;
 
 // The History API does not tell you if navigation is forward or back, so
