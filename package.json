@@ -5,8 +5,8 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "esbuild index.ts --bundle --outfile=dist/grasshopper.js",
-    "start": "esbuild index.ts --bundle --outfile=dist/grasshopper.js --watch"
+    "build": "esbuild src/index.ts --bundle --outfile=dist/grasshopper.js",
+    "start": "esbuild src/index.ts --bundle --outfile=dist/grasshopper.js --watch"
   },
   "keywords": [],
   "author": "",
