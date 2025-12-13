@@ -1,4 +1,4 @@
-export type SavedFocus = {
+type SavedFocus = {
 	activeElement: HTMLElement | null;
 	start?: number | null;
 	end?: number | null;
@@ -19,7 +19,7 @@ export function detectScriptExecuted(script: HTMLScriptElement) {
 /*
  * 	Mark new scripts that should not execute
  */
-export function deselectScripts(doc: Document) {
+function deselectScripts(doc: Document) {
 	for (const s2 of doc.scripts) {
 		if (
 			// Check if the script should be rerun regardless of it being the same
@@ -40,7 +40,7 @@ export function deselectScripts(doc: Document) {
  * insert all attributes from doc
  * reinsert all original attributes that are referenced in NON_OVERRIDABLE_ASTRO_ATTRS'
  */
-export function swapRootAttributes(newDoc: Document) {
+function swapRootAttributes(newDoc: Document) {
 	const currentRoot = document.documentElement;
 	const nonOverridableAstroAttributes = [...currentRoot.attributes].filter(
 		({ name }) => (currentRoot.removeAttribute(name), NON_OVERRIDABLE_ASTRO_ATTRS.includes(name)),
@@ -53,7 +53,7 @@ export function swapRootAttributes(newDoc: Document) {
 /*
  * make the old head look like the new one
  */
-export function swapHeadElements(doc: Document) {
+function swapHeadElements(doc: Document) {
 	for (const el of Array.from(document.head.children)) {
 		const newEl = persistedHeadElement(el as HTMLElement, doc);
 		// If the element exists in the document already, remove it
@@ -70,7 +70,7 @@ export function swapHeadElements(doc: Document) {
 	document.head.append(...doc.head.children);
 }
 
-export function swapBodyElement(newElement: Element, oldElement: Element) {
+function swapBodyElement(newElement: Element, oldElement: Element) {
 	// this will reset scroll Position
 	oldElement.replaceWith(newElement);
 
@@ -121,7 +121,7 @@ function attachShadowRoots(root: Element | ShadowRoot) {
 	});
 }
 
-export const saveFocus = (): (() => void) => {
+const saveFocus = (): (() => void) => {
 	const activeElement = document.activeElement as HTMLElement;
 	// The element that currently has the focus is part of a DOM tree
 	// that will survive the transition to the new document.
@@ -138,7 +138,7 @@ export const saveFocus = (): (() => void) => {
 	}
 };
 
-export const restoreFocus = ({ activeElement, start, end }: SavedFocus) => {
+const restoreFocus = ({ activeElement, start, end }: SavedFocus) => {
 	if (activeElement) {
 		activeElement.focus();
 		if (activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement) {
@@ -171,14 +171,6 @@ const shouldCopyProps = (el: HTMLElement): boolean => {
 
 const isSameProps = (oldEl: Element, newEl: Element) => {
 	return oldEl.getAttribute('props') === newEl.getAttribute('props');
-};
-
-export const swapFunctions = {
-	deselectScripts,
-	swapRootAttributes,
-	swapHeadElements,
-	swapBodyElement,
-	saveFocus,
 };
 
 export const swap = (doc: Document) => {
