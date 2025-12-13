@@ -2,6 +2,7 @@ import type { TransitionBeforePreparationEvent } from './events.js';
 import { doPreparation, doSwap, TRANSITION_AFTER_SWAP } from './events.js';
 import { detectScriptExecuted } from './swap-functions.js';
 import type { Direction, Fallback, Options } from './types.js';
+import { PERSIST_ATTR, DIRECTION_ATTR, OLD_NEW_ATTR } from './attrs.js';
 
 type State = {
 	index: number;
@@ -63,10 +64,6 @@ const announce = () => {
 		60,
 	);
 };
-
-const PERSIST_ATTR = 'data-astro-transition-persist';
-const DIRECTION_ATTR = 'data-astro-transition';
-const OLD_NEW_ATTR = 'data-astro-transition-fallback';
 
 let parser: DOMParser;
 

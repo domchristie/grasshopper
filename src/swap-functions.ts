@@ -1,12 +1,10 @@
+import { NON_OVERRIDABLE_ASTRO_ATTRS, PERSIST_ATTR } from './attrs.js'
+
 type SavedFocus = {
 	activeElement: HTMLElement | null;
 	start?: number | null;
 	end?: number | null;
 };
-
-const PERSIST_ATTR = 'data-astro-transition-persist';
-
-const NON_OVERRIDABLE_ASTRO_ATTRS = ['data-astro-transition', 'data-astro-transition-fallback'];
 
 const scriptsAlreadyRan = new Set<string>();
 export function detectScriptExecuted(script: HTMLScriptElement) {
