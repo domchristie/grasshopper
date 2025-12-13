@@ -19,8 +19,6 @@ type Transition = {
 	viewTransitionFinished?: () => void;
 };
 
-const inBrowser = true;
-
 // only update history entries that are managed by us
 // leave other entries alone and do not accidentally add state.
 export const updateScrollPosition = (positions: { scrollX: number; scrollY: number }) => {
@@ -30,10 +28,10 @@ export const updateScrollPosition = (positions: { scrollX: number; scrollY: numb
 	}
 };
 
-export const supportsViewTransitions = inBrowser && !!document.startViewTransition;
+export const supportsViewTransitions = !!document.startViewTransition;
 
 export const transitionEnabledOnThisPage = () =>
-	inBrowser && !!document.querySelector('[name="astro-view-transitions-enabled"]');
+	!!document.querySelector('[name="astro-view-transitions-enabled"]');
 
 const samePage = (thisLocation: URL, otherLocation: URL) =>
 	thisLocation.pathname === otherLocation.pathname && thisLocation.search === otherLocation.search;
@@ -77,18 +75,16 @@ let parser: DOMParser;
 // can use that to determine popstate if going forward or back.
 let currentHistoryIndex = 0;
 
-if (inBrowser) {
-	if (history.state) {
-		// Here we reloaded a page with history state
-		// (e.g. history navigation from non-transition page or browser reload)
-		currentHistoryIndex = history.state.index;
-		scrollTo({ left: history.state.scrollX, top: history.state.scrollY });
-	} else if (transitionEnabledOnThisPage()) {
-		// This page is loaded from the browser address bar or via a link from extern,
-		// it needs a state in the history
-		history.replaceState({ index: currentHistoryIndex, scrollX, scrollY }, '');
-		history.scrollRestoration = 'manual';
-	}
+if (history.state) {
+	// Here we reloaded a page with history state
+	// (e.g. history navigation from non-transition page or browser reload)
+	currentHistoryIndex = history.state.index;
+	scrollTo({ left: history.state.scrollX, top: history.state.scrollY });
+} else if (transitionEnabledOnThisPage()) {
+	// This page is loaded from the browser address bar or via a link from extern,
+	// it needs a state in the history
+	history.replaceState({ index: currentHistoryIndex, scrollX, scrollY }, '');
+	history.scrollRestoration = 'manual';
 }
 
 // returns the contents of the page or null if the router can't deal with it.
@@ -565,18 +561,6 @@ async function transition(
 let navigateOnServerWarned = false;
 
 export async function navigate(href: string, options?: Options) {
-	if (!inBrowser) {
-		if (!navigateOnServerWarned) {
-			// instantiate an error for the stacktrace to show to user.
-			const warning = new Error(
-				'The view transitions client API was called during a server side render. This may be unintentional as the navigate() function is expected to be called in response to user interactions. Please make sure that your usage is correct.',
-			);
-			warning.name = 'Warning';
-			console.warn(warning);
-			navigateOnServerWarned = true;
-		}
-		return;
-	}
 	await transition('forward', originalLocation, new URL(href, location.href), options ?? {});
 }
 
@@ -615,50 +599,48 @@ const onScrollEnd = () => {
 };
 
 // initialization
-if (inBrowser) {
-	if (supportsViewTransitions || getFallback() !== 'none') {
-		originalLocation = new URL(location.href);
-		addEventListener('popstate', onPopState);
-		addEventListener('load', onPageLoad);
-		// There's not a good way to record scroll position before a history back
-		// navigation, so we will record it when the user has stopped scrolling.
-		if ('onscrollend' in window) addEventListener('scrollend', onScrollEnd);
-		else {
-			// Keep track of state between intervals
-			let intervalId: number | undefined, lastY: number, lastX: number, lastIndex: State['index'];
-			const scrollInterval = () => {
-				// Check the index to see if a popstate event was fired
-				if (lastIndex !== history.state?.index) {
-					clearInterval(intervalId);
-					intervalId = undefined;
-					return;
-				}
-				// Check if the user stopped scrolling
-				if (lastY === scrollY && lastX === scrollX) {
-					// Cancel the interval and update scroll positions
-					clearInterval(intervalId);
-					intervalId = undefined;
-					onScrollEnd();
-					return;
-				} else {
-					// Update vars with current positions
-					(lastY = scrollY), (lastX = scrollX);
-				}
-			};
-			// We can't know when or how often scroll events fire, so we'll just use them to start intervals
-			addEventListener(
-				'scroll',
-				() => {
-					if (intervalId !== undefined) return;
-					(lastIndex = history.state?.index), (lastY = scrollY), (lastX = scrollX);
-					intervalId = window.setInterval(scrollInterval, 50);
-				},
-				{ passive: true },
-			);
-		}
+if (supportsViewTransitions || getFallback() !== 'none') {
+	originalLocation = new URL(location.href);
+	addEventListener('popstate', onPopState);
+	addEventListener('load', onPageLoad);
+	// There's not a good way to record scroll position before a history back
+	// navigation, so we will record it when the user has stopped scrolling.
+	if ('onscrollend' in window) addEventListener('scrollend', onScrollEnd);
+	else {
+		// Keep track of state between intervals
+		let intervalId: number | undefined, lastY: number, lastX: number, lastIndex: State['index'];
+		const scrollInterval = () => {
+			// Check the index to see if a popstate event was fired
+			if (lastIndex !== history.state?.index) {
+				clearInterval(intervalId);
+				intervalId = undefined;
+				return;
+			}
+			// Check if the user stopped scrolling
+			if (lastY === scrollY && lastX === scrollX) {
+				// Cancel the interval and update scroll positions
+				clearInterval(intervalId);
+				intervalId = undefined;
+				onScrollEnd();
+				return;
+			} else {
+				// Update vars with current positions
+				(lastY = scrollY), (lastX = scrollX);
+			}
+		};
+		// We can't know when or how often scroll events fire, so we'll just use them to start intervals
+		addEventListener(
+			'scroll',
+			() => {
+				if (intervalId !== undefined) return;
+				(lastIndex = history.state?.index), (lastY = scrollY), (lastX = scrollX);
+				intervalId = window.setInterval(scrollInterval, 50);
+			},
+			{ passive: true },
+		);
 	}
-	for (const script of document.getElementsByTagName('script')) {
-		detectScriptExecuted(script);
-		script.dataset.astroExec = '';
-	}
+}
+for (const script of document.getElementsByTagName('script')) {
+	detectScriptExecuted(script);
+	script.dataset.astroExec = '';
 }
