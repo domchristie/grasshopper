@@ -24,3 +24,4 @@ This bypasses the fetch-based navigation and instead uses the default browser be
 ## TODO
 
 - [ ] Implement `data-astro-transition-track="reload"`
+- [ ] Page refreshes that maintain scroll position
