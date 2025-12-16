@@ -25,30 +25,21 @@ if (supportsViewTransitions || fallback() !== 'none') {
 
 		lastClickedElementLeavingWindow = leavesWindow(ev) ? link : null;
 
-		if (ev.composed) {
-			link = ev.composedPath()[0];
-		}
-		if (link instanceof Element) {
-			link = link.closest('a, area');
-		}
-		if (
-			!(link instanceof HTMLAnchorElement) &&
-			!(link instanceof SVGAElement) &&
-			!(link instanceof HTMLAreaElement)
-		)
-			return;
+		if (ev.composed) link = ev.composedPath()[0];
+		if (link instanceof Element) link = link.closest('a, area');
+		if (!link) return;
+
 		// This check verifies that the click is happening on an anchor
 		// that is going to another page within the same origin. Basically it determines
 		// same-origin navigation, but omits special key combos for new tabs, etc.
 		const linkTarget = link instanceof HTMLElement ? link.target : link.target.baseVal;
 		const href = link instanceof HTMLElement ? link.href : link.href.baseVal;
-		const origin = new URL(href, location.href).origin;
 		if (
 			isReloadEl(link) ||
 			link.hasAttribute('download') ||
 			!link.href ||
 			(linkTarget && linkTarget !== '_self') ||
-			origin !== location.origin ||
+			new URL(href, location.href).origin !== location.origin ||
 			lastClickedElementLeavingWindow ||
 			ev.defaultPrevented
 		) {
