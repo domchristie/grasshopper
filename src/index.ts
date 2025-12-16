@@ -1,15 +1,12 @@
 import type { Fallback, Options } from './types';
 import { supportsViewTransitions, navigate } from './router';
+import { RELOAD_ATTR } from './attrs';
 
 let lastClickedElementLeavingWindow: EventTarget | null = null;
 
 function fallback(): Fallback {
 	const el = document.querySelector('[name="astro-view-transitions-fallback"]');
 	return el ? el.getAttribute('content') as Fallback : 'animate';
-}
-
-function isReloadEl(el: HTMLElement | SVGAElement): boolean {
-	return el.dataset.astroReload !== undefined;
 }
 
 const leavesWindow = (ev: MouseEvent) =>
@@ -35,7 +32,7 @@ if (supportsViewTransitions || fallback() !== 'none') {
 		const linkTarget = link instanceof HTMLElement ? link.target : link.target.baseVal;
 		const href = link instanceof HTMLElement ? link.href : link.href.baseVal;
 		if (
-			isReloadEl(link) ||
+			link.closest(`[${RELOAD_ATTR}]`) ||
 			link.hasAttribute('download') ||
 			!link.href ||
 			(linkTarget && linkTarget !== '_self') ||
@@ -61,7 +58,7 @@ if (supportsViewTransitions || fallback() !== 'none') {
 		const clickedWithKeys = submitter && submitter === lastClickedElementLeavingWindow;
 		lastClickedElementLeavingWindow = null;
 
-		if (el.tagName !== 'FORM' || ev.defaultPrevented || isReloadEl(el) || clickedWithKeys) {
+		if (el.tagName !== 'FORM' || ev.defaultPrevented || el.closest(`[${RELOAD_ATTR}]`) || clickedWithKeys) {
 			return;
 		}
 		const form = el as HTMLFormElement;
