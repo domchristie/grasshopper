@@ -3,12 +3,9 @@ import { supportsViewTransitions, navigate } from './router';
 
 let lastClickedElementLeavingWindow: EventTarget | null = null;
 
-function getFallback(): Fallback {
+function fallback(): Fallback {
 	const el = document.querySelector('[name="astro-view-transitions-fallback"]');
-	if (el) {
-		return el.getAttribute('content') as Fallback;
-	}
-	return 'animate';
+	return el ? el.getAttribute('content') as Fallback : 'animate';
 }
 
 function isReloadEl(el: HTMLElement | SVGAElement): boolean {
@@ -22,7 +19,7 @@ const leavesWindow = (ev: MouseEvent) =>
 	ev.altKey || // download
 	ev.shiftKey; // new window
 
-if (supportsViewTransitions || getFallback() !== 'none') {
+if (supportsViewTransitions || fallback() !== 'none') {
 	document.addEventListener('click', (ev) => {
 		let link = ev.target;
 
