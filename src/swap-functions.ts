@@ -79,15 +79,6 @@ function swapBodyElement(newElement: Element, oldElement: Element) {
 			// The element exists in the new page, replace it with the element
 			// from the old page so that state is preserved.
 			newEl.replaceWith(el);
-			// For islands, copy over the props to allow them to re-render
-			if (
-				newEl.localName === 'astro-island' &&
-				shouldCopyProps(el as HTMLElement) &&
-				!isSameProps(el, newEl)
-			) {
-				el.setAttribute('ssr', '');
-				el.setAttribute('props', newEl.getAttribute('props')!);
-			}
 		}
 	}
 
@@ -160,15 +151,6 @@ const persistedHeadElement = (el: HTMLElement, newDoc: Document): Element | null
 		return newDoc.head.querySelector(`link[rel=stylesheet][href="${href}"]`);
 	}
 	return null;
-};
-
-const shouldCopyProps = (el: HTMLElement): boolean => {
-	const persistProps = el.dataset.astroTransitionPersistProps;
-	return persistProps == null || persistProps === 'false';
-};
-
-const isSameProps = (oldEl: Element, newEl: Element) => {
-	return oldEl.getAttribute('props') === newEl.getAttribute('props');
 };
 
 export const swap = (doc: Document) => {

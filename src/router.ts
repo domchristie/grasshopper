@@ -553,8 +553,6 @@ async function transition(
 	}
 }
 
-let navigateOnServerWarned = false;
-
 export async function navigate(href: string, options?: Options) {
 	await transition('forward', originalLocation, new URL(href, location.href), options ?? {});
 }
