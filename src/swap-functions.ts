@@ -92,7 +92,7 @@ function swapBodyElement(newElement: Element, oldElement: Element) {
  * @see https://web.dev/articles/declarative-shadow-dom#polyfill
  * @param root DOM subtree to attach shadow roots within.
  */
-function attachShadowRoots(root: Element | ShadowRoot) {
+const attachShadowRoots = (root: Element | ShadowRoot) => {
 	root.querySelectorAll<HTMLTemplateElement>('template[shadowrootmode]').forEach((template) => {
 		const mode = template.getAttribute('shadowrootmode');
 		const parent = template.parentNode;
