@@ -1,4 +1,4 @@
-import { TransitionBeforePreparationEvent, triggerEvent } from './events.js';
+import { TRANSITION_PAGE_LOAD, TransitionBeforePreparationEvent, triggerEvent } from './events.js';
 import { doPreparation, doSwap, TRANSITION_AFTER_SWAP } from './events.js';
 import { detectScriptExecuted } from './swap-functions.js';
 import type { Direction, Fallback, Options } from './types.js';
@@ -49,7 +49,7 @@ let mostRecentTransition: Transition | undefined;
 // This variable tells us where we came from
 let originalLocation: URL;
 
-const onPageLoad = () => triggerEvent('astro:page-load');
+const onPageLoad = () => triggerEvent(TRANSITION_PAGE_LOAD);
 const announce = () => {
 	let div = document.createElement('div');
 	div.setAttribute('aria-live', 'assertive');

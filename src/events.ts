@@ -13,7 +13,6 @@ type Events =
 	| typeof TRANSITION_AFTER_SWAP
 	| typeof TRANSITION_PAGE_LOAD;
 export const triggerEvent = (name: Events) => document.dispatchEvent(new Event(name));
-export const onPageLoad = () => triggerEvent(TRANSITION_PAGE_LOAD);
 
 /*
  * Common stuff
