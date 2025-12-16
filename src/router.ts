@@ -33,6 +33,11 @@ export const supportsViewTransitions = !!document.startViewTransition;
 export const transitionEnabledOnThisPage = () =>
 	!!document.querySelector('[name="astro-view-transitions-enabled"]');
 
+export const fallback = (): Fallback => {
+	const el = document.querySelector('[name="astro-view-transitions-fallback"]');
+	return el ? el.getAttribute('content') as Fallback : 'animate';
+};
+
 const samePage = (thisLocation: URL, otherLocation: URL) =>
 	thisLocation.pathname === otherLocation.pathname && thisLocation.search === otherLocation.search;
 
@@ -108,14 +113,6 @@ async function fetchHTML(
 		// can't fetch, let someone else deal with it.
 		return null;
 	}
-}
-
-export function getFallback(): Fallback {
-	const el = document.querySelector('[name="astro-view-transitions-fallback"]');
-	if (el) {
-		return el.getAttribute('content') as Fallback;
-	}
-	return 'animate';
 }
 
 function runScripts() {
@@ -477,7 +474,7 @@ async function transition(
 		const updateDone = (async () => {
 			// Immediately paused to setup the ViewTransition object for Fallback mode
 			await Promise.resolve(); // hop through the micro task queue
-			await updateDOM(prepEvent, options, currentTransition, historyState, getFallback());
+			await updateDOM(prepEvent, options, currentTransition, historyState, fallback());
 			return undefined;
 		})();
 
@@ -576,7 +573,7 @@ const onScrollEnd = () => {
 };
 
 // initialization
-if (supportsViewTransitions || getFallback() !== 'none') {
+if (supportsViewTransitions || fallback() !== 'none') {
 	originalLocation = new URL(location.href);
 	addEventListener('popstate', onPopState);
 	addEventListener('load', onPageLoad);

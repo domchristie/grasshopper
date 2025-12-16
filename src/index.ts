@@ -1,13 +1,8 @@
 import type { Fallback, Options } from './types';
-import { supportsViewTransitions, navigate } from './router';
+import { supportsViewTransitions, navigate, fallback } from './router';
 import { RELOAD_ATTR } from './attrs';
 
 let lastClickedElementLeavingWindow: EventTarget | null = null;
-
-function fallback(): Fallback {
-	const el = document.querySelector('[name="astro-view-transitions-fallback"]');
-	return el ? el.getAttribute('content') as Fallback : 'animate';
-}
 
 const leavesWindow = (ev: MouseEvent) =>
 	(ev.button && ev.button !== 0) || // left clicks only
