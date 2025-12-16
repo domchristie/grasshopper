@@ -24,7 +24,11 @@ if (supportsViewTransitions || fallback() !== 'none') {
 
 		if (ev.composed) link = ev.composedPath()[0];
 		if (link instanceof Element) link = link.closest('a, area');
-		if (!link) return;
+		if (
+			!(link instanceof HTMLAnchorElement) &&
+			!(link instanceof SVGAElement) &&
+			!(link instanceof HTMLAreaElement)
+		) return;
 
 		// This check verifies that the click is happening on an anchor
 		// that is going to another page within the same origin. Basically it determines
