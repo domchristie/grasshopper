@@ -1,5 +1,4 @@
-import type { Fallback, Options } from './types';
-import { supportsViewTransitions, navigate, fallback } from './router';
+import { Options, supportsViewTransitions, navigate, fallback  } from './router';
 import { RELOAD_ATTR } from './attrs';
 
 let lastClickedElementLeavingWindow: EventTarget | null = null;

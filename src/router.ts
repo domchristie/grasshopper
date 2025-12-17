@@ -1,8 +1,32 @@
-import { TRANSITION_PAGE_LOAD, TransitionBeforePreparationEvent, triggerEvent } from './events.js';
-import { doPreparation, doSwap, TRANSITION_AFTER_SWAP } from './events.js';
-import { detectScriptExecuted } from './swap-functions.js';
-import type { Direction, Fallback, Options } from './types.js';
+import { detectScriptExecuted, swap } from './swap-functions.js';
 import { PERSIST_ATTR, DIRECTION_ATTR, OLD_NEW_ATTR } from './attrs.js';
+
+export type Fallback = 'none' | 'animate' | 'swap';
+export type Direction = 'forward' | 'back';
+export type NavigationTypeString = 'push' | 'replace' | 'traverse';
+export type Options = {
+	history?: 'auto' | 'push' | 'replace';
+	formData?: FormData;
+	sourceElement?: Element; // more than HTMLElement, e.g. SVGAElement
+};
+export type Config = {
+	from: URL,
+	to: URL,
+	direction: Direction,
+	navigationType: NavigationTypeString,
+	sourceElement?: Element,
+
+	method?: 'GET' | 'POST' | 'PUT' | 'DELETE',
+	body?: string | ArrayBuffer | Blob | DataView | File | FormData | URLSearchParams | ReadableStream,
+  headers?: Headers | {},
+  signal: AbortSignal,
+
+  response?: Response,
+  mediaType?: string,
+  text?: string,
+}
+
+let send = (elt: Element | Document = document, type: string, detail?: any, bub?: boolean) => elt.dispatchEvent(new CustomEvent("hop:" + type, {detail, cancelable:true, bubbles:bub !== false, composed:true}));
 
 type State = {
 	index: number;
@@ -19,23 +43,23 @@ type Transition = {
 	viewTransitionFinished?: () => void;
 };
 
-// only update history entries that are managed by us
-// leave other entries alone and do not accidentally add state.
-export const updateScrollPosition = (positions: { scrollX: number; scrollY: number }) => {
-	if (history.state) {
-		history.scrollRestoration = 'manual';
-		history.replaceState({ ...history.state, ...positions }, '');
-	}
-};
-
 export const supportsViewTransitions = !!document.startViewTransition;
 
-export const transitionEnabledOnThisPage = () =>
+const transitionEnabledOnThisPage = () =>
 	!!document.querySelector('[name="astro-view-transitions-enabled"]');
 
 export const fallback = (): Fallback => {
 	const el = document.querySelector('[name="astro-view-transitions-fallback"]');
 	return el ? el.getAttribute('content') as Fallback : 'animate';
+};
+
+// only update history entries that are managed by us
+// leave other entries alone and do not accidentally add state.
+const updateScrollPosition = (positions: { scrollX: number; scrollY: number }) => {
+	if (history.state) {
+		history.scrollRestoration = 'manual';
+		history.replaceState({ ...history.state, ...positions }, '');
+	}
 };
 
 const samePage = (thisLocation: URL, otherLocation: URL) =>
@@ -49,7 +73,7 @@ let mostRecentTransition: Transition | undefined;
 // This variable tells us where we came from
 let originalLocation: URL;
 
-const onPageLoad = () => triggerEvent(TRANSITION_PAGE_LOAD);
+const onLoad = () => send(document, 'load');
 const announce = () => {
 	let div = document.createElement('div');
 	div.setAttribute('aria-live', 'assertive');
@@ -85,34 +109,6 @@ if (history.state) {
 	// it needs a state in the history
 	history.replaceState({ index: currentHistoryIndex, scrollX, scrollY }, '');
 	history.scrollRestoration = 'manual';
-}
-
-// returns the contents of the page or null if the router can't deal with it.
-async function fetchHTML(
-	href: string,
-	init?: RequestInit,
-): Promise<null | { html: string; redirected?: string; mediaType: DOMParserSupportedType }> {
-	try {
-		const headers = new Headers(init?.headers);
-		const res = await fetch(href, { ...init, headers });
-		const contentType = res.headers.get('content-type') ?? '';
-		// drop potential charset (+ other name/value pairs) as parser needs the mediaType
-		const mediaType = contentType.split(';', 1)[0].trim();
-		// the DOMParser can handle two types of HTML
-		if (mediaType !== 'text/html' && mediaType !== 'application/xhtml+xml') {
-			// everything else (e.g. audio/mp3) will be handled by the browser but not by us
-			return null;
-		}
-		const html = await res.text();
-		return {
-			html,
-			redirected: res.redirected ? res.url : undefined,
-			mediaType,
-		};
-	} catch {
-		// can't fetch, let someone else deal with it.
-		return null;
-	}
 }
 
 function runScripts() {
@@ -158,12 +154,11 @@ function runScripts() {
 // Add a new entry to the browser history. This also sets the new page in the browser address bar.
 // Sets the scroll position according to the hash fragment of the new location.
 const moveToLocation = (
-	to: URL,
-	from: URL,
-	options: Options,
+	config: Config,
 	pageTitleForBrowserHistory: string,
 	historyState?: State,
 ) => {
+  const { from, to, navigationType } = config;
 	const intraPage = samePage(from, to);
 
 	const targetPageTitle = document.title;
@@ -171,11 +166,10 @@ const moveToLocation = (
 
 	let scrolledToTop = false;
 	if (to.href !== location.href && !historyState) {
-		if (options.history === 'replace') {
+		if (navigationType === 'replace') {
 			const current = history.state;
 			history.replaceState(
 				{
-					...options.state,
 					index: current.index,
 					scrollX: current.scrollX,
 					scrollY: current.scrollY,
@@ -185,7 +179,7 @@ const moveToLocation = (
 			);
 		} else {
 			history.pushState(
-				{ ...options.state, index: ++currentHistoryIndex, scrollX: 0, scrollY: 0 },
+				{ index: ++currentHistoryIndex, scrollX: 0, scrollY: 0 },
 				'',
 				to.href,
 			);
@@ -258,8 +252,8 @@ function preloadStyleLinks(newDocument: Document) {
 // if popState is given, this holds the scroll position for history navigation
 // if fallback === "animate" then simulate view transitions
 async function updateDOM(
-	preparationEvent: TransitionBeforePreparationEvent,
-	options: Options,
+	newDoc: Document,
+	config: Config,
 	currentTransition: Transition,
 	historyState?: State,
 	fallback?: Fallback,
@@ -287,7 +281,7 @@ async function updateDOM(
 		if (
 			fallback === 'animate' &&
 			!currentTransition.transitionSkipped &&
-			!preparationEvent.signal.aborted
+			!config.signal.aborted
 		) {
 			try {
 				await animate('old');
@@ -299,16 +293,22 @@ async function updateDOM(
 	};
 
 	const pageTitleForBrowserHistory = document.title; // document.title will be overridden by swap()
-	const swapEvent = await doSwap(
-		preparationEvent,
-		currentTransition.viewTransition!,
-		animateFallbackOld,
-	);
-	moveToLocation(swapEvent.to, swapEvent.from, options, pageTitleForBrowserHistory, historyState);
-	triggerEvent(TRANSITION_AFTER_SWAP);
+	// const swapEvent = await doSwap(
+	// 	newDoc,
+	// 	config,
+	// 	currentTransition.viewTransition!,
+	// 	animateFallbackOld,
+	// );
+
+
+  animateFallbackOld()
+  swap(newDoc)
+
+	moveToLocation(config, pageTitleForBrowserHistory, historyState);
+	send(document, 'swapped', { config })
 
 	if (fallback === 'animate') {
-		if (!currentTransition.transitionSkipped && !swapEvent.signal.aborted) {
+		if (!currentTransition.transitionSkipped) {  // todo: consider abortable?
 			animate('new').finally(() => currentTransition.viewTransitionFinished!());
 		} else {
 			currentTransition.viewTransitionFinished!();
@@ -345,93 +345,98 @@ async function transition(
 		return;
 	}
 
-	const navigationType = historyState
-		? 'traverse'
-		: options.history === 'replace'
-			? 'replace'
-			: 'push';
+	let config: Config = {
+		from,
+		to,
+		direction,
+		navigationType: historyState ? 'traverse' : (options.history === 'replace' ? 'replace' : 'push'),
+		sourceElement: options.sourceElement,
+		signal: currentNavigation!.controller.signal,
+		body: options.formData,
+	};
 
-	if (navigationType !== 'traverse') {
+	if (config.navigationType !== 'traverse') {
 		updateScrollPosition({ scrollX, scrollY });
 	}
 	if (samePage(from, to) && !options.formData) {
 		if ((direction !== 'back' && to.hash) || (direction === 'back' && from.hash)) {
-			moveToLocation(to, from, options, document.title, historyState);
+			moveToLocation(config, document.title, historyState);
 			if (currentNavigation === mostRecentNavigation) mostRecentNavigation = undefined;
 			return;
 		}
 	}
 
-	const prepEvent = await doPreparation(
-		from,
-		to,
-		direction,
-		navigationType,
-		options.sourceElement,
-		options.info,
-		currentNavigation!.controller.signal,
-		options.formData,
-		defaultLoader,
-	);
-	if (prepEvent.defaultPrevented || prepEvent.signal.aborted) {
-		if (currentNavigation === mostRecentNavigation) mostRecentNavigation = undefined;
-		if (!prepEvent.signal.aborted) {
-			// not aborted -> delegate to browser
-			location.href = to.href;
-		}
-		// and / or exit
-		return;
+	let newDoc: Document | undefined;
+	if (send(options.sourceElement, 'config', { config })) {
+	  if (newDoc = await defaultLoader()) {
+  	  if (config.navigationType === 'traverse') updateScrollPosition({ scrollX, scrollY })
+    } else {
+      location.href = to.href;
+      return;
+    }
+	} else {
+    return;
 	}
 
-	async function defaultLoader(preparationEvent: TransitionBeforePreparationEvent) {
-		const href = preparationEvent.to.href;
-		const init: RequestInit = { signal: preparationEvent.signal };
-		if (preparationEvent.formData) {
-			init.method = 'POST';
-			const form = (preparationEvent.sourceElement as HTMLInputElement)?.form ||
-				preparationEvent.sourceElement?.closest('form');
-			init.body = form?.enctype === 'application/x-www-form-urlencoded'
-				? new URLSearchParams(preparationEvent.formData as any)
-				: preparationEvent.formData;
+	async function defaultLoader(): Promise<Document | undefined> {
+		if (config.body) {
+			config.method = 'POST';
+			const form = (config.sourceElement as HTMLInputElement)?.form ||
+				config.sourceElement?.closest('form');
+			config.body = form?.enctype === 'application/x-www-form-urlencoded'
+				? new URLSearchParams(config.body as any)
+				: config.body;
 		}
-		const response = await fetchHTML(href, init);
-		// If there is a problem fetching the new page, just do an MPA navigation to it.
-		if (response === null) {
-			preparationEvent.preventDefault();
-			return;
+		try {
+			if (!send(config.sourceElement, 'before', { config })) return
+			let response = config.response = await fetch(config.to.href, config)
+
+			const contentType = response.headers.get('content-type') ?? '';
+			// drop potential charset (+ other name/value pairs) as parser needs the mediaType
+			config.mediaType = contentType.split(';', 1)[0].trim();
+			// the DOMParser can handle two types of HTML
+			// everything else (e.g. audio/mp3) will be handled by the browser but not by us
+			if (config.mediaType !== 'text/html' && config.mediaType !== 'application/xhtml+xml') return
+
+			config.text = await response.text();
+			if (!send(config.sourceElement, 'after', {config})) return
+		} catch(error) {
+			send(config.sourceElement, 'error', {config, error})
+			return
+		} finally {
+			send(config.sourceElement, 'finally', {config})
 		}
+
 		// if there was a redirection, show the final URL in the browser's address bar
-		if (response.redirected) {
-			const redirectedTo = new URL(response.redirected);
+		if (config.response.redirected) {
+			const redirectedTo = new URL(config.response.url);
 			// but do not redirect cross origin
-			if (redirectedTo.origin !== preparationEvent.to.origin) {
-				preparationEvent.preventDefault();
-				return;
-			}
-			preparationEvent.to = redirectedTo;
+			if (redirectedTo.origin !== config.to.origin) return;
+			config.to = redirectedTo;
 		}
 
 		parser ??= new DOMParser();
 
-		preparationEvent.newDocument = parser.parseFromString(response.html, response.mediaType);
+		let newDoc = parser.parseFromString(config.text, config.mediaType);
 		// The next line might look like a hack,
 		// but it is actually necessary as noscript elements
 		// and their contents are returned as markup by the parser,
 		// see https://developer.mozilla.org/en-US/docs/Web/API/DOMParser/parseFromString
-		preparationEvent.newDocument.querySelectorAll('noscript').forEach((el) => el.remove());
+		newDoc.querySelectorAll('noscript').forEach((el) => el.remove());
 
 		// If ClientRouter is not enabled on the incoming page, do a full page load to it.
 		// Unless this was a form submission, in which case we do not want to trigger another mutation.
 		if (
-			!preparationEvent.newDocument.querySelector('[name="astro-view-transitions-enabled"]') &&
-			!preparationEvent.formData
+			!newDoc.querySelector('[name="astro-view-transitions-enabled"]') &&
+			!config.body
 		) {
-			preparationEvent.preventDefault();
 			return;
 		}
 
-		const links = preloadStyleLinks(preparationEvent.newDocument);
-		links.length && !preparationEvent.signal.aborted && (await Promise.all(links));
+		const links = preloadStyleLinks(newDoc);
+		links.length && !config.signal.aborted && (await Promise.all(links));
+
+		return newDoc
 	}
 	async function abortAndRecreateMostRecentTransition(): Promise<Transition> {
 		if (mostRecentTransition) {
@@ -457,24 +462,24 @@ async function transition(
 
 	const currentTransition = await abortAndRecreateMostRecentTransition();
 
-	if (prepEvent.signal.aborted) {
+	if (config.signal.aborted) {
 		if (currentNavigation === mostRecentNavigation) mostRecentNavigation = undefined;
 		return;
 	}
 
-	document.documentElement.setAttribute(DIRECTION_ATTR, prepEvent.direction);
+	document.documentElement.setAttribute(DIRECTION_ATTR, config.direction);
 	if (supportsViewTransitions) {
 		// This automatically cancels any previous transition
 		// We also already took care that the earlier update callback got through
 		currentTransition.viewTransition = document.startViewTransition(
-			async () => await updateDOM(prepEvent, options, currentTransition, historyState),
+			async () => await updateDOM(newDoc, config, currentTransition, historyState),
 		);
 	} else {
 		// Simulation mode requires a bit more manual work
 		const updateDone = (async () => {
 			// Immediately paused to setup the ViewTransition object for Fallback mode
 			await Promise.resolve(); // hop through the micro task queue
-			await updateDOM(prepEvent, options, currentTransition, historyState, fallback());
+			await updateDOM(newDoc, config, currentTransition, historyState, fallback());
 			return undefined;
 		})();
 
@@ -508,7 +513,7 @@ async function transition(
 	// if the visual part of the transition has errors or was skipped
 	currentTransition.viewTransition?.updateCallbackDone.finally(async () => {
 		await runScripts();
-		onPageLoad();
+		onLoad();
 		announce();
 	});
 	// finished.ready and finished.finally are the same for the simulation but not
@@ -576,7 +581,7 @@ const onScrollEnd = () => {
 if (supportsViewTransitions || fallback() !== 'none') {
 	originalLocation = new URL(location.href);
 	addEventListener('popstate', onPopState);
-	addEventListener('load', onPageLoad);
+	addEventListener('load', onLoad);
 	// There's not a good way to record scroll position before a history back
 	// navigation, so we will record it when the user has stopped scrolling.
 	if ('onscrollend' in window) addEventListener('scrollend', onScrollEnd);
