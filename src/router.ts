@@ -166,22 +166,13 @@ const moveToLocation = (
 	let scrolledToTop = false;
 	if (to.href !== location.href && !historyState) {
 		if (navigationType === 'replace') {
-			const current = history.state;
-			history.replaceState(
-				{
-					index: current.index,
-					scrollX: current.scrollX,
-					scrollY: current.scrollY,
-				},
-				'',
-				to.href,
-			);
+			history.replaceState(history.state, '', to.href)
 		} else {
-			history.pushState(
-				{ index: ++currentHistoryIndex, scrollX: 0, scrollY: 0 },
-				'',
-				to.href,
-			);
+			history.pushState({
+				index: ++currentHistoryIndex,
+				scrollX: 0,
+				scrollY: 0
+			}, '', to.href)
 		}
 	}
 	document.title = targetPageTitle;
