@@ -116,9 +116,8 @@ if (history.state) {
 function runScripts() {
 	let wait: Promise<any> = Promise.resolve();
 	let needsWaitForInlineModuleScript = false;
-	// The original code made the assumption that all inline scripts are directly executed when inserted into the DOM.
-	// This is not true for inline module scripts, which are deferred but still executed in order.
-	// inline module scripts can not be awaited for with onload.
+	// Inline module scripts are deferred but still executed in order.
+	// They can not be awaited for with onload.
 	// Thus to be able to wait for the execution of all scripts, we make sure that the last inline module script
 	// is always followed by an external module script
 	for (const script of document.getElementsByTagName('script')) {
@@ -133,17 +132,16 @@ function runScripts() {
 		);
 
 	for (const script of document.getElementsByTagName('script')) {
-		if (script.dataset.astroEval === 'false') continue;
-		const type = script.getAttribute('type');
-		if (type && type !== 'module' && type !== 'text/javascript') continue;
+		if (script.dataset.astroEval === 'false') continue
+		const type = script.getAttribute('type')
+		if (type && type !== 'module' && type !== 'text/javascript') continue
+
 		const newScript = document.createElement('script');
 		newScript.innerHTML = script.innerHTML;
 		for (const attr of script.attributes) {
 			if (attr.name === 'src') {
-				const p = new Promise((r) => {
-					newScript.onload = newScript.onerror = r;
-				});
-				wait = wait.then(() => p);
+				const p = new Promise((r) => newScript.onload = newScript.onerror = r)
+				wait = wait.then(() => p)
 			}
 			newScript.setAttribute(attr.name, attr.value);
 		}
