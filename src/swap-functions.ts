@@ -1,43 +1,5 @@
 import { NON_OVERRIDABLE_ASTRO_ATTRS, PERSIST_ATTR } from './attrs.js'
 
-type SavedFocus = {
-	activeElement: HTMLElement | null;
-	start?: number | null;
-	end?: number | null;
-};
-
-const scriptsAlreadyRan = new Set<string>();
-export function detectScriptExecuted(script: HTMLScriptElement) {
-	const key = script.src ? new URL(script.src, location.href).href : script.textContent!;
-	if (scriptsAlreadyRan.has(key)) return true;
-	scriptsAlreadyRan.add(key);
-	return false;
-}
-
-/*
- * 	Mark new scripts that should not execute
- */
-function deselectScripts(doc: Document) {
-	for (const s2 of doc.scripts) {
-		if (
-			// Check if the script should be rerun regardless of it being the same
-			!s2.hasAttribute('data-astro-rerun') &&
-			// Check if the script has already been executed
-			detectScriptExecuted(s2)
-		) {
-			// the old script is in the new document and doesn't have the rerun attribute
-			// we mark it as executed to prevent re-execution
-			s2.dataset.astroExec = '';
-		}
-	}
-}
-
-/*
- * swap attributes of the html element
- * delete all attributes from the current document
- * insert all attributes from doc
- * reinsert all original attributes that are referenced in NON_OVERRIDABLE_ASTRO_ATTRS'
- */
 function swapRootAttributes(newDoc: Document) {
 	const currentRoot = document.documentElement;
 	const nonOverridableAstroAttributes = [...currentRoot.attributes].filter(
@@ -48,38 +10,25 @@ function swapRootAttributes(newDoc: Document) {
 	);
 }
 
-/*
- * make the old head look like the new one
- */
 function swapHeadElements(doc: Document) {
-	for (const el of Array.from(document.head.children)) {
-		const newEl = persistedHeadElement(el as HTMLElement, doc);
-		// If the element exists in the document already, remove it
-		// from the new document and leave the current node alone
-		if (newEl) {
-			newEl.remove();
-		} else {
-			// Otherwise remove the element in the head. It doesn't exist in the new page.
-			el.remove();
-		}
-	}
+	const oldEls = [...document.head.children]
+	const newEls = [...doc.head.children]
 
-	// Everything left in the new head is new, append it all.
+	for (const oldEl of oldEls) {
+	  const newEl = newEls.find(newEl => newEl.isEqualNode(oldEl))
+		newEl ? newEl.remove() : oldEl.remove() // todo: track element reloads
+	}
 	document.head.append(...doc.head.children);
 }
 
 function swapBodyElement(newElement: Element, oldElement: Element) {
-	// this will reset scroll Position
-	oldElement.replaceWith(newElement);
+	// Note: resets scroll position
+	oldElement.replaceWith(newElement)
 
 	for (const el of oldElement.querySelectorAll(`[${PERSIST_ATTR}]`)) {
-		const id = el.getAttribute(PERSIST_ATTR);
-		const newEl = newElement.querySelector(`[${PERSIST_ATTR}="${id}"]`);
-		if (newEl) {
-			// The element exists in the new page, replace it with the element
-			// from the old page so that state is preserved.
-			newEl.replaceWith(el);
-		}
+		const id = el.getAttribute(PERSIST_ATTR)
+		const newEl = newElement.querySelector(`[${PERSIST_ATTR}="${id}"]`)
+		if (newEl) newEl.replaceWith(el)
 	}
 
 	// This will upgrade any Declarative Shadow DOM in the new body.
@@ -110,54 +59,29 @@ const attachShadowRoots = (root: Element | ShadowRoot) => {
 	});
 }
 
-const saveFocus = (): (() => void) => {
-	const activeElement = document.activeElement as HTMLElement;
-	// The element that currently has the focus is part of a DOM tree
-	// that will survive the transition to the new document.
-	// Save the element and the cursor position
-	if (activeElement?.closest(`[${PERSIST_ATTR}]`)) {
-		if (activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement) {
-			const start = activeElement.selectionStart;
-			const end = activeElement.selectionEnd;
-			return () => restoreFocus({ activeElement, start, end });
+function withRestoredFocus(callback: () => void) {
+  const activeEl = document.activeElement as HTMLElement
+	if (activeEl?.closest(`[${PERSIST_ATTR}]`)) {
+		if (activeEl instanceof HTMLInputElement || activeEl instanceof HTMLTextAreaElement) {
+			const start = activeEl.selectionStart
+			const end = activeEl.selectionEnd
+			callback()
+			activeEl.focus()
+			if (typeof start === 'number') activeEl.selectionStart = start
+			if (typeof end === 'number') activeEl.selectionEnd = end
+		} else {
+			callback()
+			activeEl.focus()
 		}
-		return () => restoreFocus({ activeElement });
 	} else {
-		return () => restoreFocus({ activeElement: null });
+		callback()
 	}
-};
+}
 
-const restoreFocus = ({ activeElement, start, end }: SavedFocus) => {
-	if (activeElement) {
-		activeElement.focus();
-		if (activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement) {
-			if (typeof start === 'number') activeElement.selectionStart = start;
-			if (typeof end === 'number') activeElement.selectionEnd = end;
-		}
-	}
-};
-
-// Check for a head element that should persist and returns it,
-// either because it has the data attribute or is a link el.
-// Returns null if the element is not part of the new head, undefined if it should be left alone.
-const persistedHeadElement = (el: HTMLElement, newDoc: Document): Element | null => {
-	const id = el.getAttribute(PERSIST_ATTR);
-	const newEl = id && newDoc.head.querySelector(`[${PERSIST_ATTR}="${id}"]`);
-	if (newEl) {
-		return newEl;
-	}
-	if (el.matches('link[rel=stylesheet]')) {
-		const href = el.getAttribute('href');
-		return newDoc.head.querySelector(`link[rel=stylesheet][href="${href}"]`);
-	}
-	return null;
-};
-
-export const swap = (doc: Document) => {
-	deselectScripts(doc);
-	swapRootAttributes(doc);
-	swapHeadElements(doc);
-	const restoreFocusFunction = saveFocus();
-	swapBodyElement(doc.body, document.body);
-	restoreFocusFunction();
-};
+export const swap = (newDoc: Document) => {
+	swapRootAttributes(newDoc)
+	swapHeadElements(newDoc)
+	withRestoredFocus(() => {
+		swapBodyElement(newDoc.body, document.body)
+	})
+}

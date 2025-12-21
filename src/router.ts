@@ -1,4 +1,4 @@
-import { detectScriptExecuted, swap } from './swap-functions.js';
+import { swap } from './swap-functions.js';
 import { PERSIST_ATTR, DIRECTION_ATTR, OLD_NEW_ATTR } from './attrs.js';
 
 export type Fallback = 'none' | 'animate' | 'swap';
@@ -31,7 +31,7 @@ export type Config = {
 
 let send = (elt: Element | Document = document, type: string, detail?: any, bub?: boolean) => elt.dispatchEvent(new CustomEvent("hop:" + type, {detail, cancelable:true, bubbles:bub !== false, composed:true}));
 let abortController: AbortController | undefined;
-let currentransition: Transition | undefined;
+let currentTransition: ViewTransition | undefined;
 
 type State = {
 	index: number;
@@ -49,7 +49,7 @@ type Transition = {
 
 export const supportsViewTransitions = !!document.startViewTransition;
 
-const transitionEnabledOnThisPage = () =>
+const enabled = () =>
 	!!document.querySelector('[name="astro-view-transitions-enabled"]');
 
 export const fallback = (): Fallback => {
@@ -106,7 +106,7 @@ if (history.state) {
 	// (e.g. history navigation from non-transition page or browser reload)
 	currentHistoryIndex = history.state.index;
 	scrollTo({ left: history.state.scrollX, top: history.state.scrollY });
-} else if (transitionEnabledOnThisPage()) {
+} else if (enabled()) {
 	// This page is loaded from the browser address bar or via a link from extern,
 	// it needs a state in the history
 	history.replaceState({ index: currentHistoryIndex, scrollX, scrollY }, '');
@@ -114,7 +114,7 @@ if (history.state) {
 }
 
 function runScripts() {
-	let wait = Promise.resolve();
+	let wait: Promise<any> = Promise.resolve();
 	let needsWaitForInlineModuleScript = false;
 	// The original code made the assumption that all inline scripts are directly executed when inserted into the DOM.
 	// This is not true for inline module scripts, which are deferred but still executed in order.
@@ -122,7 +122,7 @@ function runScripts() {
 	// Thus to be able to wait for the execution of all scripts, we make sure that the last inline module script
 	// is always followed by an external module script
 	for (const script of document.getElementsByTagName('script')) {
-		script.dataset.astroExec === undefined &&
+		script.dataset.astroEval !== 'false' &&
 			script.getAttribute('type') === 'module' &&
 			(needsWaitForInlineModuleScript = script.getAttribute('src') === null);
 	}
@@ -133,7 +133,7 @@ function runScripts() {
 		);
 
 	for (const script of document.getElementsByTagName('script')) {
-		if (script.dataset.astroExec === '') continue;
+		if (script.dataset.astroEval === 'false') continue;
 		const type = script.getAttribute('type');
 		if (type && type !== 'module' && type !== 'text/javascript') continue;
 		const newScript = document.createElement('script');
@@ -143,11 +143,10 @@ function runScripts() {
 				const p = new Promise((r) => {
 					newScript.onload = newScript.onerror = r;
 				});
-				wait = wait.then(() => p as any);
+				wait = wait.then(() => p);
 			}
 			newScript.setAttribute(attr.name, attr.value);
 		}
-		newScript.dataset.astroExec = '';
 		script.replaceWith(newScript);
 	}
 	return wait;
@@ -253,69 +252,9 @@ function preloadStyleLinks(newDocument: Document) {
 // if !popstate, update the history entry and scroll position according to toLocation
 // if popState is given, this holds the scroll position for history navigation
 // if fallback === "animate" then simulate view transitions
-async function updateDOM(
-	newDoc: Document,
-	config: Config,
-	currentTransition: Transition,
-	historyState?: State,
-	fallback?: Fallback,
-) {
-	async function animate(phase: string) {
-		function isInfinite(animation: Animation) {
-			const effect = animation.effect;
-			if (!effect || !(effect instanceof KeyframeEffect) || !effect.target) return false;
-			const style = window.getComputedStyle(effect.target, effect.pseudoElement);
-			return style.animationIterationCount === 'infinite';
-		}
-		const currentAnimations = document.getAnimations();
-		// Trigger view transition animations waiting for data-astro-transition-fallback
-		document.documentElement.setAttribute(OLD_NEW_ATTR, phase);
-		const nextAnimations = document.getAnimations();
-		const newAnimations = nextAnimations.filter(
-			(a) => !currentAnimations.includes(a) && !isInfinite(a),
-		);
-		// Wait for all new animations to finish (resolved or rejected).
-		// Do not reject on canceled ones.
-		return Promise.allSettled(newAnimations.map((a) => a.finished));
-	}
-
-	const animateFallbackOld = async () => {
-		if (
-			fallback === 'animate' &&
-			!currentTransition.transitionSkipped &&
-			!config.signal.aborted
-		) {
-			try {
-				await animate('old');
-			} catch {
-				// animate might reject as a consequence of a call to skipTransition()
-				// ignored on purpose
-			}
-		}
-	};
-
-	const pageTitleForBrowserHistory = document.title; // document.title will be overridden by swap()
-	// const swapEvent = await doSwap(
-	// 	newDoc,
-	// 	config,
-	// 	currentTransition.viewTransition!,
-	// 	animateFallbackOld,
-	// );
-
-
-	animateFallbackOld()
+async function updateDOM(newDoc: Document, config: Config, historyState?: State) {
 	swap(newDoc)
-
-	moveToLocation(config, pageTitleForBrowserHistory, historyState);
-	send(document, 'swapped', { config })
-
-	if (fallback === 'animate') {
-		if (!currentTransition.transitionSkipped) {	// todo: consider abortable?
-			animate('new').finally(() => currentTransition.viewTransitionFinished!());
-		} else {
-			currentTransition.viewTransitionFinished!();
-		}
-	}
+	moveToLocation(config, document.title, historyState);
 }
 
 async function transition(
@@ -329,7 +268,7 @@ async function transition(
 	abortController = new AbortController()
 
 	// Check eligibility
-	if (!transitionEnabledOnThisPage() || location.origin !== to.origin) {
+	if (!enabled() || location.origin !== to.origin) {
 		location.href = to.href
 		return
 	}
@@ -407,99 +346,39 @@ async function transition(
 
 		return newDoc
 	}
-	async function abortAndRecreateMostRecentTransition(): Promise<Transition> {
-		if (lastTransition) {
-			if (lastTransition.viewTransition) {
-				try {
-					lastTransition.viewTransition.skipTransition();
-				} catch {
-					// might throw AbortError DOMException. Ignored on purpose.
-				}
-				try {
-					// UpdateCallbackDone might already been settled, i.e. if the previous transition finished updating the DOM.
-					// Could not take long, we wait for it to avoid parallel updates
-					// (which are very unlikely as long as swap() is not async).
-					await lastTransition.viewTransition.updateCallbackDone;
-				} catch {
-					// There was an error in the update callback of the transition which we cancel.
-					// Ignored on purpose
-				}
-			}
-		}
-		return (lastTransition = { transitionSkipped: false });
+
+	try {
+		currentTransition?.skipTransition()
+	} catch {
+		// ignore
 	}
 
-	const currentTransition = await abortAndRecreateMostRecentTransition()
-
 	document.documentElement.setAttribute(DIRECTION_ATTR, config.direction);
+
+	let domUpdated: Promise<void> = Promise.resolve()
+	let transitionFinished: Promise<void> = Promise.resolve()
 	if (supportsViewTransitions) {
 		// This automatically cancels any previous transition
 		// We also already took care that the earlier update callback got through
-		currentTransition.viewTransition = document.startViewTransition(
-			async () => await updateDOM(newDoc, config, currentTransition, historyState),
-		);
+		currentTransition = document.startViewTransition(
+			async () => await updateDOM(newDoc, config, historyState)
+		)
+		domUpdated = currentTransition.updateCallbackDone
+		transitionFinished = currentTransition.finished
 	} else {
-		// Simulation mode requires a bit more manual work
-		const updateDone = (async () => {
-			// Immediately paused to setup the ViewTransition object for Fallback mode
-			await Promise.resolve(); // hop through the micro task queue
-			await updateDOM(newDoc, config, currentTransition, historyState, fallback());
-			return undefined;
-		})();
-
-		// When the updateDone promise is settled,
-		// we have run and awaited all swap functions and the after-swap event
-		// This qualifies for "updateCallbackDone".
-		//
-		// For the build in ViewTransition, "ready" settles shortly after "updateCallbackDone",
-		// i.e. after all pseudo elements are created and the animation is about to start.
-		// In simulation mode the "old" animation starts before swap,
-		// the "new" animation starts after swap. That is not really comparable.
-		// Thus we go with "very, very shortly after updateCallbackDone" and make both equal.
-		//
-		// "finished" resolves after all animations are done.
-
-		currentTransition.viewTransition = {
-			updateCallbackDone: updateDone, // this is about correct
-			ready: updateDone, // good enough
-			// Finished promise could have been done better: finished rejects iff updateDone does.
-			// Our simulation always resolves, never rejects.
-			finished: new Promise((r) => (currentTransition.viewTransitionFinished = r as () => void)), // see end of updateDOM
-			skipTransition: () => {
-				currentTransition.transitionSkipped = true;
-				// This cancels all animations of the simulation
-				document.documentElement.removeAttribute(OLD_NEW_ATTR);
-			},
-			types: new Set<string>(), // empty by default
-		};
+		await updateDOM(newDoc, config, historyState)
 	}
-	// In earlier versions was then'ed on viewTransition.ready which would not execute
-	// if the visual part of the transition has errors or was skipped
-	currentTransition.viewTransition?.updateCallbackDone.finally(async () => {
-		await runScripts();
-		onLoad();
-		announce();
-	});
-	// finished.ready and finished.finally are the same for the simulation but not
-	// necessarily for native view transition, where finished rejects when updateCallbackDone does.
-	currentTransition.viewTransition?.finished.finally(() => {
-		currentTransition.viewTransition = undefined;
-		if (currentTransition === lastTransition) lastTransition = undefined;
-		document.documentElement.removeAttribute(DIRECTION_ATTR);
-		document.documentElement.removeAttribute(OLD_NEW_ATTR);
-	});
-	try {
-		// Compatibility:
-		// In an earlier version we awaited viewTransition.ready, which includes animation setup.
-		// Scripts that depend on the view transition pseudo elements should hook on viewTransition.ready.
-		await currentTransition.viewTransition?.updateCallbackDone;
-	} catch (e) {
-		// This log doesn't make it worse than before, where we got error messages about uncaught exceptions, which can't be caught when the trigger was a click or history traversal.
-		// Needs more investigation on root causes if errors still occur sporadically
-		const err = e as Error;
-		// biome-ignore lint/suspicious/noConsole: allowed
-		console.log('[astro]', err.name, err.message, err.stack);
-	}
+	domUpdated.finally(async () => {
+		send(document, 'swapped', { config })
+		await runScripts()
+		onLoad()
+		announce()
+	})
+	transitionFinished.finally(() => {
+		currentTransition = void 0
+		document.documentElement.removeAttribute(DIRECTION_ATTR)
+		document.documentElement.removeAttribute(OLD_NEW_ATTR)
+	})
 }
 
 export async function navigate(to: string | URL, options?: Options) {
@@ -515,7 +394,7 @@ export async function navigate(to: string | URL, options?: Options) {
 }
 
 function onPopState(ev: PopStateEvent) {
-	if (!transitionEnabledOnThisPage() && ev.state) {
+	if (!enabled() && ev.state) {
 		// The current page doesn't have transitions enabled
 		// but the page we navigate to does (because it set the state).
 		// Do a full page refresh to reload the client-side router from the new page.
@@ -583,8 +462,4 @@ if (supportsViewTransitions || fallback() !== 'none') {
 			{ passive: true },
 		);
 	}
-}
-for (const script of document.getElementsByTagName('script')) {
-	detectScriptExecuted(script);
-	script.dataset.astroExec = '';
 }
