@@ -114,15 +114,17 @@ if (history.state) {
 }
 
 function runScripts() {
+  let runnable = [...document.scripts].filter(
+    script => (script as any).__new && script.dataset.astroEval !== 'false'
+  )
 	let wait: Promise<any> = Promise.resolve();
 	let needsWaitForInlineModuleScript = false;
 	// Inline module scripts are deferred but still executed in order.
 	// They can not be awaited for with onload.
 	// Thus to be able to wait for the execution of all scripts, we make sure that the last inline module script
 	// is always followed by an external module script
-	for (const script of document.getElementsByTagName('script')) {
-		script.dataset.astroEval !== 'false' &&
-			script.getAttribute('type') === 'module' &&
+	for (const script of runnable) {
+		script.getAttribute('type') === 'module' &&
 			(needsWaitForInlineModuleScript = script.getAttribute('src') === null);
 	}
 	needsWaitForInlineModuleScript &&
@@ -131,8 +133,7 @@ function runScripts() {
 			`<script type="module" src="data:application/javascript,"/>`,
 		);
 
-	for (const script of document.getElementsByTagName('script')) {
-		if (script.dataset.astroEval === 'false') continue
+	for (const script of runnable) {
 		const type = script.getAttribute('type')
 		if (type && type !== 'module' && type !== 'text/javascript') continue
 

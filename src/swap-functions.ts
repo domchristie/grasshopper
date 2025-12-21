@@ -10,29 +10,31 @@ function swapRootAttributes(newDoc: Document) {
 	);
 }
 
-function swapHeadElements(doc: Document) {
+function swapHeadElements(newDoc: Document) {
 	const oldEls = [...document.head.children]
-	const newEls = [...doc.head.children]
+	const newEls = [...newDoc.head.children]
 
 	for (const oldEl of oldEls) {
 	  const newEl = newEls.find(newEl => newEl.isEqualNode(oldEl))
 		newEl ? newEl.remove() : oldEl.remove() // todo: track element reloads
 	}
-	document.head.append(...doc.head.children);
+	flagNewScripts(newDoc.head.getElementsByTagName('script'))
+	document.head.append(...newDoc.head.children)
 }
 
-function swapBodyElement(newElement: Element, oldElement: Element) {
+function swapBodyElement(newBody: HTMLElement, oldBody: HTMLElement) {
 	// Note: resets scroll position
-	oldElement.replaceWith(newElement)
+	oldBody.replaceWith(newBody)
 
-	for (const el of oldElement.querySelectorAll(`[${PERSIST_ATTR}]`)) {
+	for (const el of oldBody.querySelectorAll(`[${PERSIST_ATTR}]`)) {
 		const id = el.getAttribute(PERSIST_ATTR)
-		const newEl = newElement.querySelector(`[${PERSIST_ATTR}="${id}"]`)
+		const newEl = newBody.querySelector(`[${PERSIST_ATTR}="${id}"]`)
 		if (newEl) newEl.replaceWith(el)
 	}
+	flagNewScripts(newBody.getElementsByTagName('script'))
 
 	// This will upgrade any Declarative Shadow DOM in the new body.
-	attachShadowRoots(newElement);
+	attachShadowRoots(newBody);
 }
 
 /**
@@ -76,6 +78,10 @@ function withRestoredFocus(callback: () => void) {
 	} else {
 		callback()
 	}
+}
+
+function flagNewScripts(scripts: HTMLCollectionOf<HTMLScriptElement>) {
+  for (let script of scripts) (script as any).__new = true
 }
 
 export const swap = (newDoc: Document) => {
