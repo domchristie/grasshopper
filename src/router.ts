@@ -64,7 +64,6 @@ function saveScrollPosition(positions: { scrollX: number; scrollY: number }) {
 	}
 }
 
-function onLoad() { send(document, 'load') }
 function announce() {
 	let div = document.createElement('div')
 	div.setAttribute('aria-live', 'assertive')
@@ -325,7 +324,7 @@ async function transition(
 	domUpdated.finally(async () => {
 		send(document, 'swapped', { config })
 		await runScripts()
-		onLoad()
+		send(document, 'load')
 		announce()
 	})
 	transitionFinished.finally(() => {
@@ -390,7 +389,7 @@ if (history.state) {
 
 if (supportsViewTransitions) {
 	addEventListener('popstate', onPopState);
-	addEventListener('load', onLoad);
+	addEventListener('load', () => send(document, 'load'));
 	// There's not a good way to record scroll position before a history back
 	// navigation, so we will record it when the user has stopped scrolling.
 	if ('onscrollend' in window) addEventListener('scrollend', onScrollEnd);
