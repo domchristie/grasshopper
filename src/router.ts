@@ -69,6 +69,8 @@ function announce() {
 	let div = document.createElement('div')
 	div.setAttribute('aria-live', 'assertive')
 	div.setAttribute('aria-atomic', 'true')
+	Object.assign(div.style, { position: 'absolute', left: '0', top: '0', clip: 'rect(0 0 0 0)', clipPath: 'inset(50%)', overflow: 'hidden', whiteSpace: 'nowrap', width: '1px', height: '1px' })
+
 	div.className = 'astro-route-announcer'
 	document.body.append(div)
 	setTimeout(
