@@ -1,17 +1,16 @@
 import { swap } from './swap-functions.js';
-import { PERSIST_ATTR, DIRECTION_ATTR, OLD_NEW_ATTR } from './attrs.js';
+import { PERSIST_ATTR, DIRECTION_ATTR } from './attrs.js';
 
-export type Fallback = 'none' | 'animate' | 'swap';
-export type Direction = 'forward' | 'back';
-export type NavigationTypeString = 'push' | 'replace' | 'traverse';
-export type Options = {
+type Direction = 'forward' | 'back';
+type NavigationTypeString = 'push' | 'replace' | 'traverse';
+type Options = {
 	srcElement?: Element
 	trigger?: Event
 	method?: 'get' | 'post'
 	history?: 'auto' | 'push' | 'replace'
 	body?: string | FormData | URLSearchParams
 };
-export type Config = {
+type Config = {
 	from: URL,
 	to: URL,
 	direction: Direction,
@@ -28,89 +27,60 @@ export type Config = {
 	mediaType?: string,
 	text?: string,
 }
+type State = {
+	index: number
+	scrollX: number
+	scrollY: number
+}
 
-let send = (elt: Element | Document = document, type: string, detail?: any, bub?: boolean) => elt.dispatchEvent(new CustomEvent("hop:" + type, {detail, cancelable:true, bubbles:bub !== false, composed:true}));
 let abortController: AbortController | undefined;
 let currentTransition: ViewTransition | undefined;
 
-type State = {
-	index: number;
-	scrollX: number;
-	scrollY: number;
-};
-type Transition = {
-	// The view transitions object (API and simulation)
-	viewTransition?: ViewTransition;
-	// Simulation: Whether transition was skipped
-	transitionSkipped: boolean;
-	// Simulation: The resolve function of the finished promise
-	viewTransitionFinished?: () => void;
-};
-
-export const supportsViewTransitions = !!document.startViewTransition;
-
-const enabled = () =>
-	!!document.querySelector('[name="astro-view-transitions-enabled"]');
-
-export const fallback = (): Fallback => {
-	const el = document.querySelector('[name="astro-view-transitions-fallback"]');
-	return el ? el.getAttribute('content') as Fallback : 'animate';
-};
-
-// only update history entries that are managed by us
-// leave other entries alone and do not accidentally add state.
-const saveScrollPosition = (positions: { scrollX: number; scrollY: number }) => {
-	if (history.state) {
-		history.scrollRestoration = 'manual';
-		history.replaceState({ ...history.state, ...positions }, '');
-	}
-};
-
-const samePage = (thisLocation: URL, otherLocation: URL) =>
-	thisLocation.pathname === otherLocation.pathname && thisLocation.search === otherLocation.search;
-
-// The previous transition that might still be in processing
-let lastTransition: Transition | undefined;
 // When we traverse the history, the window.location is already set to the new location.
 // This variable tells us where we came from
 let currentUrl: URL = new URL(location.href);
 
-const onLoad = () => send(document, 'load');
-const announce = () => {
-	let div = document.createElement('div');
-	div.setAttribute('aria-live', 'assertive');
-	div.setAttribute('aria-atomic', 'true');
-	div.className = 'astro-route-announcer';
-	document.body.append(div);
+// The History API does not tell you if navigation is forward or back, so
+// you can figure it using an index. On pushState the index is incremented so you
+// can use that to determine popstate if going forward or back.
+let currentHistoryIndex = 0
+let parser = new DOMParser()
+
+export let supportsViewTransitions = !!document.startViewTransition;
+
+let enabled = (doc: Document = document) =>
+	!!doc.querySelector('[name="astro-view-transitions-enabled"]');
+let samePage = (thisLocation: URL, otherLocation: URL) =>
+	thisLocation.pathname === otherLocation.pathname && thisLocation.search === otherLocation.search
+
+let send = (elt: Element | Document = document, type: string, detail?: any, bub?: boolean) => elt.dispatchEvent(new CustomEvent("hop:" + type, {detail, cancelable:true, bubbles:bub !== false, composed:true}));
+
+// only update history entries that are managed by us
+// leave other entries alone and do not accidentally add state.
+function saveScrollPosition(positions: { scrollX: number; scrollY: number }) {
+	if (history.state) {
+		history.scrollRestoration = 'manual';
+		history.replaceState({ ...history.state, ...positions }, '');
+	}
+}
+
+function onLoad() { send(document, 'load') }
+function announce() {
+	let div = document.createElement('div')
+	div.setAttribute('aria-live', 'assertive')
+	div.setAttribute('aria-atomic', 'true')
+	div.className = 'astro-route-announcer'
+	document.body.append(div)
 	setTimeout(
 		() => {
-			let title = document.title || document.querySelector('h1')?.textContent || location.pathname;
-			div.textContent = title;
+			let title = document.title || document.querySelector('h1')?.textContent || location.pathname
+			div.textContent = title
 		},
 		// Much thought went into this magic number; the gist is that screen readers
 		// need to see that the element changed and might not do so if it happens
 		// too quickly.
-		60,
-	);
-};
-
-let parser: DOMParser;
-
-// The History API does not tell you if navigation is forward or back, so
-// you can figure it using an index. On pushState the index is incremented so you
-// can use that to determine popstate if going forward or back.
-let currentHistoryIndex = 0;
-
-if (history.state) {
-	// Here we reloaded a page with history state
-	// (e.g. history navigation from non-transition page or browser reload)
-	currentHistoryIndex = history.state.index;
-	scrollTo({ left: history.state.scrollX, top: history.state.scrollY });
-} else if (enabled()) {
-	// This page is loaded from the browser address bar or via a link from extern,
-	// it needs a state in the history
-	history.replaceState({ index: currentHistoryIndex, scrollX, scrollY }, '');
-	history.scrollRestoration = 'manual';
+		60
+	)
 }
 
 function runScripts() {
@@ -241,7 +211,6 @@ function preloadStyleLinks(newDocument: Document) {
 // replace head and body of the windows document with contents from newDocument
 // if !popstate, update the history entry and scroll position according to toLocation
 // if popState is given, this holds the scroll position for history navigation
-// if fallback === "animate" then simulate view transitions
 async function updateDOM(newDoc: Document, config: Config, historyState?: State) {
 	swap(newDoc)
 	moveToLocation(config, document.title, historyState);
@@ -317,19 +286,12 @@ async function transition(
 			config.to = redirectedTo;
 		}
 
-		parser ??= new DOMParser();
-
 		let newDoc = parser.parseFromString(config.text, config.mediaType);
 		newDoc.querySelectorAll('noscript').forEach((el) => el.remove());
 
 		// If ClientRouter is not enabled on the incoming page, do a full page load to it.
 		// Unless this was a form submission, in which case we do not want to trigger another mutation.
-		if (
-			!newDoc.querySelector('[name="astro-view-transitions-enabled"]') &&
-			!config.body
-		) {
-			return;
-		}
+		if (!enabled(newDoc) && !config.body) return
 
 		const links = preloadStyleLinks(newDoc);
 		links.length && !config.signal.aborted && (await Promise.all(links));
@@ -367,7 +329,6 @@ async function transition(
 	transitionFinished.finally(() => {
 		currentTransition = void 0
 		document.documentElement.removeAttribute(DIRECTION_ATTR)
-		document.documentElement.removeAttribute(OLD_NEW_ATTR)
 	})
 }
 
@@ -413,7 +374,19 @@ const onScrollEnd = () => {
 };
 
 // initialization
-if (supportsViewTransitions || fallback() !== 'none') {
+if (history.state) {
+	// Here we reloaded a page with history state
+	// (e.g. history navigation from non-transition page or browser reload)
+	currentHistoryIndex = history.state.index;
+	scrollTo({ left: history.state.scrollX, top: history.state.scrollY });
+} else if (enabled()) {
+	// This page is loaded from the browser address bar or via a link from extern,
+	// it needs a state in the history
+	history.replaceState({ index: currentHistoryIndex, scrollX, scrollY }, '');
+	history.scrollRestoration = 'manual';
+}
+
+if (supportsViewTransitions) {
 	addEventListener('popstate', onPopState);
 	addEventListener('load', onLoad);
 	// There's not a good way to record scroll position before a history back

@@ -1,4 +1,4 @@
-import { supportsViewTransitions, navigate, fallback } from './router'
+import { supportsViewTransitions, navigate } from './router'
 import { RELOAD_ATTR } from './attrs'
 
 let lastClickedElementLeavingWindow: EventTarget | null = null
@@ -15,7 +15,7 @@ const leavesWindow = (ev: MouseEvent) =>
 const formAttr = (form: HTMLFormElement, submitter: HTMLElement | null, attr: string, defaultVal: any) =>
 	submitter?.getAttribute(`form${attr}`) ?? (form[attr] === 'string' ? form[attr] : form.getAttribute(attr)) ?? defaultVal
 
-if (supportsViewTransitions || fallback() !== 'none') {
+if (supportsViewTransitions) {
 	document.addEventListener('click', (ev) => {
 		let link = ev.target
 		lastClickedElementLeavingWindow = leavesWindow(ev) ? link : null
