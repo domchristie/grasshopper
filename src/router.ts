@@ -46,8 +46,6 @@ let currentUrl: URL = new URL(location.href);
 let currentHistoryIndex = 0
 let parser = new DOMParser()
 
-export let supportsViewTransitions = !!document.startViewTransition;
-
 let enabled = (doc: Document = document) =>
 	!!doc.querySelector('[name="astro-view-transitions-enabled"]');
 let samePage = (thisLocation: URL, otherLocation: URL) =>
@@ -310,7 +308,7 @@ async function transition(
 
 	let domUpdated: Promise<void> = Promise.resolve()
 	let transitionFinished: Promise<void> = Promise.resolve()
-	if (supportsViewTransitions) {
+	if (document.startViewTransition) {
 		// This automatically cancels any previous transition
 		// We also already took care that the earlier update callback got through
 		currentTransition = document.startViewTransition(
@@ -387,43 +385,41 @@ if (history.state) {
 	history.scrollRestoration = 'manual';
 }
 
-if (supportsViewTransitions) {
-	addEventListener('popstate', onPopState);
-	addEventListener('load', () => send(document, 'load'));
-	// There's not a good way to record scroll position before a history back
-	// navigation, so we will record it when the user has stopped scrolling.
-	if ('onscrollend' in window) addEventListener('scrollend', onScrollEnd);
-	else {
-		// Keep track of state between intervals
-		let intervalId: number | undefined, lastY: number, lastX: number, lastIndex: State['index'];
-		const scrollInterval = () => {
-			// Check the index to see if a popstate event was fired
-			if (lastIndex !== history.state?.index) {
-				clearInterval(intervalId);
-				intervalId = undefined;
-				return;
-			}
-			// Check if the user stopped scrolling
-			if (lastY === scrollY && lastX === scrollX) {
-				// Cancel the interval and update scroll positions
-				clearInterval(intervalId);
-				intervalId = undefined;
-				onScrollEnd();
-				return;
-			} else {
-				// Update vars with current positions
-				(lastY = scrollY), (lastX = scrollX);
-			}
-		};
-		// We can't know when or how often scroll events fire, so we'll just use them to start intervals
-		addEventListener(
-			'scroll',
-			() => {
-				if (intervalId !== undefined) return;
-				(lastIndex = history.state?.index), (lastY = scrollY), (lastX = scrollX);
-				intervalId = window.setInterval(scrollInterval, 50);
-			},
-			{ passive: true },
-		);
-	}
+addEventListener('popstate', onPopState);
+addEventListener('load', () => send(document, 'load'));
+// There's not a good way to record scroll position before a history back
+// navigation, so we will record it when the user has stopped scrolling.
+if ('onscrollend' in window) addEventListener('scrollend', onScrollEnd);
+else {
+	// Keep track of state between intervals
+	let intervalId: number | undefined, lastY: number, lastX: number, lastIndex: State['index'];
+	const scrollInterval = () => {
+		// Check the index to see if a popstate event was fired
+		if (lastIndex !== history.state?.index) {
+			clearInterval(intervalId);
+			intervalId = undefined;
+			return;
+		}
+		// Check if the user stopped scrolling
+		if (lastY === scrollY && lastX === scrollX) {
+			// Cancel the interval and update scroll positions
+			clearInterval(intervalId);
+			intervalId = undefined;
+			onScrollEnd();
+			return;
+		} else {
+			// Update vars with current positions
+			(lastY = scrollY), (lastX = scrollX);
+		}
+	};
+	// We can't know when or how often scroll events fire, so we'll just use them to start intervals
+	addEventListener(
+		'scroll',
+		() => {
+			if (intervalId !== undefined) return;
+			(lastIndex = history.state?.index), (lastY = scrollY), (lastX = scrollX);
+			intervalId = window.setInterval(scrollInterval, 50);
+		},
+		{ passive: true },
+	);
 }
