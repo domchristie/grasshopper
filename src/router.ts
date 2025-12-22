@@ -46,8 +46,8 @@ let currentUrl: URL = new URL(location.href);
 let currentHistoryIndex = 0
 let parser = new DOMParser()
 
-let enabled = (doc: Document = document) =>
-	!!doc.querySelector('[name="astro-view-transitions-enabled"]');
+let enabled = (doc: Document = document) => !!doc.querySelector('[name="astro-view-transitions-enabled"]')
+
 let samePage = (thisLocation: URL, otherLocation: URL) =>
 	thisLocation.pathname === otherLocation.pathname && thisLocation.search === otherLocation.search
 
@@ -373,20 +373,21 @@ const onScrollEnd = () => {
 };
 
 // initialization
-if (history.state) {
-	// Here we reloaded a page with history state
-	// (e.g. history navigation from non-transition page or browser reload)
-	currentHistoryIndex = history.state.index;
-	scrollTo({ left: history.state.scrollX, top: history.state.scrollY });
-} else if (enabled()) {
-	// This page is loaded from the browser address bar or via a link from extern,
-	// it needs a state in the history
-	history.replaceState({ index: currentHistoryIndex, scrollX, scrollY }, '');
-	history.scrollRestoration = 'manual';
-}
-
-addEventListener('popstate', onPopState);
-addEventListener('load', () => send(document, 'load'));
+addEventListener('DOMContentLoaded', function() {
+	if (history.state) {
+		// Here we reloaded a page with history state
+		// (e.g. history navigation from non-transition page or browser reload)
+		currentHistoryIndex = history.state.index
+		scrollTo({ left: history.state.scrollX, top: history.state.scrollY })
+	} else if (enabled()) {
+		// This page is loaded from the browser address bar or via a link from extern,
+		// it needs a state in the history
+		history.replaceState({ index: currentHistoryIndex, scrollX, scrollY }, '')
+		history.scrollRestoration = 'manual'
+	}
+})
+addEventListener('load', () => send(document, 'load'))
+addEventListener('popstate', onPopState)
 // There's not a good way to record scroll position before a history back
 // navigation, so we will record it when the user has stopped scrolling.
 if ('onscrollend' in window) addEventListener('scrollend', onScrollEnd);
