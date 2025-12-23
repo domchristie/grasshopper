@@ -166,7 +166,7 @@ function scroll(from: URL, to: URL, historyState?: State) {
 
 function moveToLocation(config: Config, title: string, historyState?: State) {
   updateHistory(config, title, historyState)
-  scroll(config.to, config.from, historyState)
+  scroll(config.from, config.to, historyState)
 }
 
 function preloadStyles(newDoc: Document) {
