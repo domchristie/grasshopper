@@ -1,9 +1,9 @@
-import { NON_OVERRIDABLE_ASTRO_ATTRS, PERSIST_ATTR } from './attrs.js'
+import { DIRECTION_ATTR, PERSIST_ATTR } from './attrs.js'
 
 function swapRootAttributes(newDoc: Document) {
 	const currentRoot = document.documentElement
 	const nonOverridableAstroAttributes = [...currentRoot.attributes].filter(
-		({ name }) => (currentRoot.removeAttribute(name), NON_OVERRIDABLE_ASTRO_ATTRS.includes(name))
+		({ name }) => (currentRoot.removeAttribute(name), [DIRECTION_ATTR].includes(name))
 	);
 	[...newDoc.documentElement.attributes, ...nonOverridableAstroAttributes].forEach(
 		({ name, value }) => currentRoot.setAttribute(name, value)

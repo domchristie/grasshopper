@@ -48,8 +48,7 @@ let parser = new DOMParser()
 
 let enabled = (doc: Document = document) => !!doc.querySelector('[name="astro-view-transitions-enabled"]')
 
-let samePage = (thisLocation: URL, otherLocation: URL) =>
-	thisLocation.pathname === otherLocation.pathname && thisLocation.search === otherLocation.search
+let samePage = (url: URL, otherUrl: URL) => url.pathname === otherUrl.pathname && url.search === otherUrl.search
 
 let send = (elt: Element | Document = document, type: string, detail?: any, bub?: boolean) => elt.dispatchEvent(new CustomEvent("hop:" + type, {detail, cancelable:true, bubbles:bub !== false, composed:true}));
 
@@ -260,7 +259,7 @@ async function transition(
 		return
 	}
 
-	async function defaultLoader(): Promise<Document | undefined> {
+	async function fetchHtml(): Promise<Document | undefined> {
 		try {
 			if (!send(config.srcElement, 'before', { config })) return
 			let response = config.response = await fetch(config.to.href, config)

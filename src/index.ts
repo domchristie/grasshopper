@@ -1,8 +1,7 @@
 import { navigate } from './router'
-import { RELOAD_ATTR } from './attrs'
 
+let RELOAD_ATTR = 'data-astro-reload'
 let started = false
-
 let lastClickedElementLeavingWindow: EventTarget | null = null
 
 const leavesWindow = (ev: MouseEvent) =>
