@@ -55,10 +55,13 @@ let send = (elt: Element | Document = document, type: string, detail?: any, bub?
 
 // only update history entries that are managed by us
 // leave other entries alone and do not accidentally add state.
-function saveScrollPosition(positions: { scrollX: number; scrollY: number }) {
+function saveScrollPosition() {
 	if (history.state) {
-		history.scrollRestoration = 'manual';
-		history.replaceState({ ...history.state, ...positions }, '');
+		history.scrollRestoration = 'manual'
+		// avoid expensive calls to history.replaceState
+		if (scrollX !== history.state.scrollX || scrollY !== history.state.scrollY) {
+			history.replaceState({ ...history.state, scrollX, scrollY }, '')
+		}
 	}
 }
 
@@ -133,16 +136,11 @@ const moveToLocation = (
 	const targetPageTitle = document.title;
 	document.title = pageTitleForBrowserHistory;
 
-	let scrolledToTop = false;
 	if (to.href !== location.href && !historyState) {
 		if (navigationType === 'replace') {
 			history.replaceState(history.state, '', to.href)
 		} else {
-			history.pushState({
-				index: ++currentHistoryIndex,
-				scrollX: 0,
-				scrollY: 0
-			}, '', to.href)
+			history.pushState({ index: ++currentHistoryIndex, scrollX: 0, scrollY: 0 }, '', to.href)
 		}
 	}
 	document.title = targetPageTitle;
@@ -151,6 +149,7 @@ const moveToLocation = (
 	currentUrl = to;
 
 	// freshly loaded pages start from the top
+	let scrolledToTop = false;
 	if (!intraPage) {
 		scrollTo({ left: 0, top: 0, behavior: 'instant' });
 		scrolledToTop = true;
@@ -241,7 +240,7 @@ async function transition(
 		body: options.body,
 	};
 
-	if (config.navigationType !== 'traverse') saveScrollPosition({ scrollX, scrollY })
+	if (config.navigationType !== 'traverse') saveScrollPosition()
 	if (samePage(from, to) && !options.body) {
 		if ((direction !== 'back' && to.hash) || (direction === 'back' && from.hash)) {
 			moveToLocation(config, document.title, historyState)
@@ -251,8 +250,8 @@ async function transition(
 
 	let newDoc: Document | undefined;
 	if (send(config.srcElement, 'config', { config })) {
-		if (newDoc = await defaultLoader()) {
-			if (config.navigationType === 'traverse') saveScrollPosition({ scrollX, scrollY })
+		if (newDoc = await fetchHtml()) {
+			if (config.navigationType === 'traverse') saveScrollPosition()
 		} else {
 			location.href = to.href
 			return
@@ -343,35 +342,6 @@ export async function navigate(to: string | URL, options?: Options) {
 	await transition('forward', currentUrl, config.to, options ?? {});
 }
 
-function onPopState(ev: PopStateEvent) {
-	if (!enabled() && ev.state) {
-		// The current page doesn't have transitions enabled
-		// but the page we navigate to does (because it set the state).
-		// Do a full page refresh to reload the client-side router from the new page.
-		location.reload();
-		return;
-	}
-
-	// Our transition entries always have state. Ignore stateless entries.
-	if (ev.state === null) return
-	const state: State = history.state;
-	const nextIndex = state.index;
-	const direction: Direction = nextIndex > currentHistoryIndex ? 'forward' : 'back';
-	currentHistoryIndex = nextIndex;
-	transition(direction, currentUrl, new URL(location.href), {}, state);
-}
-
-const onScrollEnd = () => {
-	// NOTE: our "popstate" event handler may call `pushState()` or
-	// `replaceState()` and then `scrollTo()`, which will fire "scroll" and
-	// "scrollend" events. To avoid redundant work and expensive calls to
-	// `replaceState()`, we simply check that the values are different before
-	// updating.
-	if (history.state && (scrollX !== history.state.scrollX || scrollY !== history.state.scrollY)) {
-		saveScrollPosition({ scrollX, scrollY });
-	}
-};
-
 // initialization
 addEventListener('DOMContentLoaded', function() {
 	if (history.state) {
@@ -386,41 +356,48 @@ addEventListener('DOMContentLoaded', function() {
 		history.scrollRestoration = 'manual'
 	}
 })
-addEventListener('load', () => send(document, 'load'))
-addEventListener('popstate', onPopState)
+
+addEventListener('popstate', function(ev: PopStateEvent) {
+	if (!enabled() && ev.state) {
+		// The current page doesn't have transitions enabled
+		// but the page we navigate to does (because it set the state).
+		// Do a full page refresh to reload the client-side router from the new page.
+		return location.reload()	}
+
+	// Our transition entries always have state. Ignore stateless entries.
+	if (ev.state === null) return
+	const state: State = history.state;
+	const nextIndex = state.index;
+	const direction: Direction = nextIndex > currentHistoryIndex ? 'forward' : 'back';
+	currentHistoryIndex = nextIndex;
+	transition(direction, currentUrl, new URL(location.href), {}, state);
+})
+
 // There's not a good way to record scroll position before a history back
 // navigation, so we will record it when the user has stopped scrolling.
-if ('onscrollend' in window) addEventListener('scrollend', onScrollEnd);
+if ('onscrollend' in window) addEventListener('scrollend', saveScrollPosition)
 else {
-	// Keep track of state between intervals
-	let intervalId: number | undefined, lastY: number, lastX: number, lastIndex: State['index'];
-	const scrollInterval = () => {
+	let intervalId: number | undefined, lastY: number, lastX: number, lastIndex: State['index']
+	function scrollInterval() {
 		// Check the index to see if a popstate event was fired
-		if (lastIndex !== history.state?.index) {
-			clearInterval(intervalId);
-			intervalId = undefined;
-			return;
-		}
+		if (lastIndex !== history.state?.index) return reset()
+
 		// Check if the user stopped scrolling
 		if (lastY === scrollY && lastX === scrollX) {
-			// Cancel the interval and update scroll positions
-			clearInterval(intervalId);
-			intervalId = undefined;
-			onScrollEnd();
-			return;
+			saveScrollPosition()
+			return reset()
 		} else {
-			// Update vars with current positions
-			(lastY = scrollY), (lastX = scrollX);
+			(lastY = scrollY), (lastX = scrollX)
 		}
-	};
+	}
+	function reset() {
+		clearInterval(intervalId)
+		intervalId = void 0
+	}
 	// We can't know when or how often scroll events fire, so we'll just use them to start intervals
-	addEventListener(
-		'scroll',
-		() => {
-			if (intervalId !== undefined) return;
-			(lastIndex = history.state?.index), (lastY = scrollY), (lastX = scrollX);
-			intervalId = window.setInterval(scrollInterval, 50);
-		},
-		{ passive: true },
-	);
+	addEventListener('scroll', function () {
+		if (intervalId !== undefined) return
+		(lastIndex = history.state?.index), (lastY = scrollY), (lastX = scrollX)
+		intervalId = window.setInterval(scrollInterval, 50)
+	})
 }
