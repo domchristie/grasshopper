@@ -122,18 +122,11 @@ function runScripts() {
 	return wait;
 }
 
-// Add a new entry to the browser history. This also sets the new page in the browser address bar.
-// Sets the scroll position according to the hash fragment of the new location.
-const moveToLocation = (
-	config: Config,
-	pageTitleForBrowserHistory: string,
-	historyState?: State,
-) => {
-	const { from, to, navigationType } = config;
-	const intraPage = samePage(from, to);
+function updateHistory(config: Config, title: string, historyState?: State) {
+  const { to, navigationType } = config
 
-	const targetPageTitle = document.title;
-	document.title = pageTitleForBrowserHistory;
+	const targetTitle = document.title
+	document.title = title
 
 	if (to.href !== location.href && !historyState) {
 		if (navigationType === 'replace') {
@@ -142,20 +135,15 @@ const moveToLocation = (
 			history.pushState({ index: ++currentHistoryIndex, scrollX: 0, scrollY: 0 }, '', to.href)
 		}
 	}
-	document.title = targetPageTitle;
-	// now we are on the new page for non-history navigation!
-	// (with history navigation page change happens before popstate is fired)
-	currentUrl = to;
+	document.title = targetTitle
+	currentUrl = to
+}
 
-	// freshly loaded pages start from the top
-	let scrolledToTop = false;
-	if (!intraPage) {
-		scrollTo({ left: 0, top: 0, behavior: 'instant' });
-		scrolledToTop = true;
-	}
+function scroll(from: URL, to: URL, historyState?: State) {
+  let scrollToOpts: ScrollToOptions = { left: 0, top: 0, behavior: 'instant' }
 
 	if (historyState) {
-		scrollTo(historyState.scrollX, historyState.scrollY);
+    scrollToOpts = { left: historyState.scrollX, top: historyState.scrollY }
 	} else {
 		if (to.hash) {
 			// because we are already on the target page ...
@@ -165,52 +153,44 @@ const moveToLocation = (
 			const savedState = history.state;
 			location.href = to.href; // this kills the history state on Firefox
 			if (!history.state) {
-				history.replaceState(savedState, ''); // this restores the history state
-				if (intraPage) {
-					window.dispatchEvent(new PopStateEvent('popstate'));
-				}
+				history.replaceState(savedState, '') // this restores the history state
+				if (samePage(from, to)) window.dispatchEvent(new PopStateEvent('popstate'))
 			}
-		} else {
-			if (!scrolledToTop) {
-				scrollTo({ left: 0, top: 0, behavior: 'instant' });
-			}
-		}
-		history.scrollRestoration = 'manual';
-	}
-};
-
-function preloadStyleLinks(newDocument: Document) {
-	const links: Promise<any>[] = [];
-	for (const el of newDocument.querySelectorAll('head link[rel=stylesheet]')) {
-		// Do not preload links that are already on the page.
-		if (
-			!document.querySelector(
-				`[${PERSIST_ATTR}="${el.getAttribute(
-					PERSIST_ATTR,
-				)}"], link[rel=stylesheet][href="${el.getAttribute('href')}"]`,
-			)
-		) {
-			const c = document.createElement('link');
-			c.setAttribute('rel', 'preload');
-			c.setAttribute('as', 'style');
-			c.setAttribute('href', el.getAttribute('href')!);
-			links.push(
-				new Promise<any>((resolve) => {
-					['load', 'error'].forEach((evName) => c.addEventListener(evName, resolve));
-					document.head.append(c);
-				}),
-			);
+			history.scrollRestoration = 'manual'
+			return
 		}
 	}
-	return links;
+	scrollTo(scrollToOpts)
+	history.scrollRestoration = 'manual'
 }
 
-// replace head and body of the windows document with contents from newDocument
-// if !popstate, update the history entry and scroll position according to toLocation
-// if popState is given, this holds the scroll position for history navigation
+function moveToLocation(config: Config, title: string, historyState?: State) {
+  updateHistory(config, title, historyState)
+  scroll(config.to, config.from, historyState)
+}
+
+function preloadStyles(newDoc: Document) {
+ 	let oldEls = [...document.querySelectorAll('head link[rel=stylesheet]')]
+	let newEls = [...newDoc.querySelectorAll('head link[rel=stylesheet]')]
+
+	return newEls
+		.filter(newEl => !oldEls.some(oldEl => oldEl.isEqualNode(newEl))) // todo: consider persistent stylesheets
+		.map((el) => {
+			let link = document.createElement('link')
+			link.setAttribute('rel', 'preload')
+			link.setAttribute('as', 'style')
+			link.setAttribute('href', el.getAttribute('href')!)
+			return new Promise((resolve) => {
+				['load', 'error'].forEach((ev) => link.addEventListener(ev, resolve))
+				document.head.append(link)
+			})
+		})
+}
+
 async function updateDOM(newDoc: Document, config: Config, historyState?: State) {
+	const title = document.title
 	swap(newDoc)
-	moveToLocation(config, document.title, historyState);
+	moveToLocation(config, title, historyState)
 }
 
 async function transition(
@@ -290,8 +270,8 @@ async function transition(
 		// Unless this was a form submission, in which case we do not want to trigger another mutation.
 		if (!enabled(newDoc) && !config.body) return
 
-		const links = preloadStyleLinks(newDoc);
-		links.length && !config.signal.aborted && (await Promise.all(links));
+		const links = preloadStyles(newDoc)
+		links.length && !config.signal.aborted && (await Promise.all(links))
 
 		return newDoc
 	}
