@@ -1,13 +1,21 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <title>One</title>
   <script src="./dist/grasshopper.js"></script>
   <style>p { color: red }</style>
-  <meta name="astro-view-transitions-enabled" content="true" />
-  <meta name="astro-view-transitions-fallback" content="animate" /> <!-- 'none' | 'animate' | 'swap' -->
+  <link rel="stylesheet" href="./styles.css">
+  <meta name="hop-view-transitions-enabled" content="true" />
+  <script>console.log('from <head> on one.html')</script>
 </head>
 <body>
-<a href="index.html">Index</a>
-<p data-astro-transition-persist="p">One</p>
+<a href="/">Index</a>
+<a href="/#fragment">Index fragment</a>
+<p data-hop-transition-persist="p">One</p>
+<form method="get" action="/">
+  <input type="submit" data-hop-transition-persist="1">
+</form>
+<script>console.log('from <body> on one.html')</script>
+<script data-hop-eval="false">console.log('from <body> on one.html but only on the first load')</script>
 </body>
 </html>

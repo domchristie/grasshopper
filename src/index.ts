@@ -30,9 +30,9 @@ type State = {
 	scrollY: number
 }
 
-let DIRECTION_ATTR = 'data-astro-transition'
-let PERSIST_ATTR = 'data-astro-transition-persist'
-let RELOAD_ATTR = 'data-astro-reload'
+let DIRECTION_ATTR = 'data-hop-transition'
+let PERSIST_ATTR = 'data-hop-transition-persist'
+let RELOAD_ATTR = 'data-hop-reload'
 
 let started = false
 let lastClickedElementLeavingWindow: EventTarget | null = null
@@ -50,7 +50,7 @@ let currentUrl: URL = new URL(location.href)
 let currentHistoryIndex = 0
 let parser = new DOMParser()
 
-let enabled = (doc: Document = document) => !!doc.querySelector('[name="astro-view-transitions-enabled"]')
+let enabled = (doc: Document = document) => doc.querySelector('[name="hop-view-transitions-enabled"]')
 
 let samePage = (url: URL, otherUrl: URL) => url.pathname === otherUrl.pathname && url.search === otherUrl.search
 
@@ -86,7 +86,6 @@ function announce() {
 	div.setAttribute('aria-atomic', 'true')
 	Object.assign(div.style, { position: 'absolute', left: '0', top: '0', clip: 'rect(0 0 0 0)', clipPath: 'inset(50%)', overflow: 'hidden', whiteSpace: 'nowrap', width: '1px', height: '1px' })
 
-	div.className = 'astro-route-announcer'
 	document.body.append(div)
 	setTimeout(
 		() => {
@@ -102,10 +101,10 @@ function announce() {
 
 function swapRootAttributes(newDoc: Document) {
 	const currentRoot = document.documentElement
-	const nonOverridableAstroAttributes = [...currentRoot.attributes].filter(
+	const nonOverridableAttributes = [...currentRoot.attributes].filter(
 		({ name }) => (currentRoot.removeAttribute(name), [DIRECTION_ATTR].includes(name))
 	);
-	[...newDoc.documentElement.attributes, ...nonOverridableAstroAttributes].forEach(
+	[...newDoc.documentElement.attributes, ...nonOverridableAttributes].forEach(
 		({ name, value }) => currentRoot.setAttribute(name, value)
 	)
 }
@@ -180,7 +179,7 @@ function flagNewScripts(scripts: HTMLCollectionOf<HTMLScriptElement>) {
 
 function runScripts() {
 	let runnable = [...document.scripts].filter(
-		script => (script as any).__new && script.dataset.astroEval !== 'false'
+		script => (script as any).__new && script.dataset.hopEval !== 'false'
 	)
 	let wait: Promise<any> = Promise.resolve();
 	let needsWaitForInlineModuleScript = false;
@@ -412,9 +411,9 @@ export async function navigate(to: string | URL, options?: Options) {
 }
 
 // initialization
+function start() {
+	if (started || !enabled()) return
 
-
-if (!started) {
 	document.addEventListener('click', (ev) => {
 		let link = ev.target
 		lastClickedElementLeavingWindow = leavesWindow(ev) ? link : null
@@ -442,7 +441,7 @@ if (!started) {
 		ev.preventDefault()
 		navigate(href, {
 			srcElement: link,
-			history: link.dataset.astroHistory === 'replace' ? 'replace' : 'auto'
+			history: link.dataset.hopHistory === 'replace' ? 'replace' : 'auto'
 		})
 	})
 
@@ -474,22 +473,8 @@ if (!started) {
 			srcElement: submitter ?? form,
 			method,
 			body,
-			history: (submitter ?? form).dataset.astroHistory === 'replace' ? 'replace' : 'auto'
+			history: (submitter ?? form).dataset.hopHistory === 'replace' ? 'replace' : 'auto'
 		})
-	})
-
-	addEventListener('DOMContentLoaded', function() {
-		if (history.state) {
-			// Here we reloaded a page with history state
-			// (e.g. history navigation from non-transition page or browser reload)
-			currentHistoryIndex = history.state.index
-			scrollTo({ left: history.state.scrollX, top: history.state.scrollY })
-		} else if (enabled()) {
-			// This page is loaded from the browser address bar or via a link from extern,
-			// it needs a state in the history
-			history.replaceState({ index: currentHistoryIndex, scrollX, scrollY }, '')
-			history.scrollRestoration = 'manual'
-		}
 	})
 
 	addEventListener('popstate', function(ev: PopStateEvent) {
@@ -497,7 +482,8 @@ if (!started) {
 			// The current page doesn't have transitions enabled
 			// but the page we navigate to does (because it set the state).
 			// Do a full page refresh to reload the client-side router from the new page.
-			return location.reload()	}
+			return location.reload()
+		}
 
 		// Our transition entries always have state. Ignore stateless entries.
 		if (ev.state === null) return
@@ -507,6 +493,18 @@ if (!started) {
 		currentHistoryIndex = nextIndex;
 		transition(direction, currentUrl, new URL(location.href), {}, state);
 	})
+
+	if (history.state) {
+		// Here we reloaded a page with history state
+		// (e.g. history navigation from non-transition page or browser reload)
+		currentHistoryIndex = history.state.index
+		scrollTo({ left: history.state.scrollX, top: history.state.scrollY })
+	} else if (enabled()) {
+		// This page is loaded from the browser address bar or via a link from extern,
+		// it needs a state in the history
+		history.replaceState({ index: currentHistoryIndex, scrollX, scrollY }, '')
+		history.scrollRestoration = 'manual'
+	}
 
 	// There's not a good way to record scroll position before a history back
 	// navigation, so we will record it when the user has stopped scrolling.
@@ -538,3 +536,4 @@ if (!started) {
 	}
 	started = true
 }
+addEventListener('DOMContentLoaded', start)

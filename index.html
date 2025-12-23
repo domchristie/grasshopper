@@ -1,15 +1,23 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <title>Index</title>
   <script src="./dist/grasshopper.js"></script>
-  <meta name="astro-view-transitions-enabled" content="true" />
-  <meta name="astro-view-transitions-fallback" content="animate" /> <!-- 'none' | 'animate' | 'swap' -->
+  <meta name="hop-view-transitions-enabled" content="true" />
+  <style>
+  html {
+    scroll-behavior: smooth;
+  }
+  </style>
 </head>
 <body>
 <a href="one.html">One</a>
-<p data-astro-transition-persist="p">Index</p>
-<form method="get" action="one.html">
-  <input type="submit">
+<a href="one.html" data-hop-reload="true">One with reload</a>
+<a href="#fragment">Fragment</a>
+<p data-hop-transition-persist="p">Index</p>
+<form method="get" action="/one.html">
+  <input type="submit" data-hop-transition-persist="1">
 </form>
+<p id="fragment" style="margin: 100vh 0">Fragment</p>
 </body>
 </html>
