@@ -30,7 +30,7 @@ type State = {
 	scrollY: number
 }
 
-let DIRECTION_ATTR = 'data-hop-transition'
+let DIRECTION_ATTR = 'data-hop-direction'
 let PERSIST_ATTR = 'data-hop-transition-persist'
 let DISABLED_ATTR = 'data-hop'
 
