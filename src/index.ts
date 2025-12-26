@@ -127,9 +127,9 @@ function swapHeadElements(newDoc: Document) {
 	document.head.append(...newDoc.head.children)
 }
 
-function swapBodyElement(newBody: HTMLElement, oldBody: HTMLElement) {
-	// Note: resets scroll position
-	oldBody.replaceWith(newBody)
+function swapBodyElement(newBody: HTMLElement) {
+	const oldBody = document.body
+	oldBody.replaceWith(newBody) // Note: resets scroll position
 
 	for (const el of oldBody.querySelectorAll(`[${PERSIST_ATTR}]`)) {
 		const id = el.getAttribute(PERSIST_ATTR)
@@ -239,13 +239,7 @@ function preloadStyles(newDoc: Document) {
 		})
 }
 
-async function transition(
-	direction: Direction,
-	from: URL,
-	to: URL,
-	options: Options,
-	historyState?: State,
-) {
+async function transition(direction: Direction, from: URL, to: URL, options: Options, historyState?: State) {
 	abortController?.abort()
 	abortController = new AbortController()
 
@@ -337,7 +331,7 @@ async function transition(
 		swapRootAttributes(newDoc)
 		swapHeadElements(newDoc)
 		withRestoredFocus(() => {
-			swapBodyElement(newDoc.body, document.body)
+			swapBodyElement(newDoc.body)
 		})
 		moveToLocation(title, historyState)
 	}
