@@ -32,7 +32,7 @@ type State = {
 
 let DIRECTION_ATTR = 'data-hop-transition'
 let PERSIST_ATTR = 'data-hop-transition-persist'
-let RELOAD_ATTR = 'data-hop-reload'
+let DISABLED_ATTR = 'data-hop'
 
 let started = false
 let lastClickedElementLeavingWindow: EventTarget | null = null
@@ -50,7 +50,13 @@ let currentUrl: URL = new URL(location.href)
 let currentHistoryIndex = 0
 let parser = new DOMParser()
 
-let enabled = (doc: Document = document) => doc.querySelector('[name="hop-view-transitions-enabled"]')
+function enabled(el: Element | Document = document) {
+	if (el instanceof Document) {
+		return el.querySelector('[name="hop-view-transitions-enabled"]')
+	} else if (el instanceof Element) {
+		return !(el.closest(`[${DISABLED_ATTR}]`)?.getAttribute(DISABLED_ATTR) === 'false')
+	}
+}
 
 let samePage = (url: URL, otherUrl: URL) => url.pathname === otherUrl.pathname && url.search === otherUrl.search
 
@@ -429,7 +435,7 @@ function start() {
 		const linkTarget = link instanceof SVGAElement ? link.target.baseVal : link.target
 		const href = link instanceof SVGAElement ? link.href.baseVal : link.href
 		if (
-			link.closest(`[${RELOAD_ATTR}]`) ||
+			!enabled(link) ||
 			link.hasAttribute('download') ||
 			!link.href ||
 			(linkTarget && linkTarget !== '_self') ||
@@ -453,7 +459,7 @@ function start() {
 		lastClickedElementLeavingWindow = null
 
 		// Check eligibility
-		if (el.tagName !== 'FORM' || ev.defaultPrevented || el.closest(`[${RELOAD_ATTR}]`) || clickedWithKeys) return
+		if (el.tagName !== 'FORM' || ev.defaultPrevented || !enabled(el) || clickedWithKeys) return
 		let form = el as HTMLFormElement
 		let action = new URL(formAttr(form, submitter, 'action', location.pathname), location.href)
 		let method = formAttr(form, submitter, 'method', 'get')
