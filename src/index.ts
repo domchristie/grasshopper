@@ -105,6 +105,43 @@ function announce() {
 	)
 }
 
+async function fetchHtml(config: Config): Promise<Document | undefined> {
+	try {
+		if (!send(config.srcElement, 'before', { config })) return
+		let response = config.response = await fetch(config.to.href, config)
+
+		const contentType = response.headers.get('content-type') ?? '';
+		config.mediaType = contentType.split(';', 1)[0].trim();
+		if (config.mediaType !== 'text/html' && config.mediaType !== 'application/xhtml+xml') return
+
+		config.text = await response.text();
+		if (!send(config.srcElement, 'after', {config})) return
+	} catch(error) {
+		send(config.srcElement, 'error', {config, error})
+		return
+	} finally {
+		send(config.srcElement, 'finally', {config})
+	}
+
+	if (config.response.redirected) {
+		const redirectedTo = new URL(config.response.url);
+		if (redirectedTo.origin !== config.to.origin) return;
+		config.to = redirectedTo;
+	}
+
+	let newDoc = parser.parseFromString(config.text, config.mediaType);
+	newDoc.querySelectorAll('noscript').forEach((el) => el.remove());
+
+	// If ClientRouter is not enabled on the incoming page, do a full page load to it.
+	// Unless this was a form submission, in which case we do not want to trigger another mutation.
+	if (!enabled(newDoc) && !config.body) return
+
+	const links = preloadStyles(newDoc)
+	links.length && !config.signal.aborted && (await Promise.all(links))
+
+	return newDoc
+}
+
 function swapRootAttributes(newDoc: Document) {
 	const currentRoot = document.documentElement
 	const nonOverridableAttributes = [...currentRoot.attributes].filter(
@@ -269,7 +306,7 @@ async function transition(direction: Direction, from: URL, to: URL, options: Opt
 
 	let newDoc: Document | undefined;
 	if (send(config.srcElement, 'config', { config })) {
-		if (newDoc = await fetchHtml()) {
+		if (newDoc = await fetchHtml(config)) {
 			if (config.navigationType === 'traverse') saveScrollPosition()
 		} else {
 			location.href = to.href
@@ -334,43 +371,6 @@ async function transition(direction: Direction, from: URL, to: URL, options: Opt
 			swapBodyElement(newDoc.body)
 		})
 		moveToLocation(title, historyState)
-	}
-
-	async function fetchHtml(): Promise<Document | undefined> {
-		try {
-			if (!send(config.srcElement, 'before', { config })) return
-			let response = config.response = await fetch(config.to.href, config)
-
-			const contentType = response.headers.get('content-type') ?? '';
-			config.mediaType = contentType.split(';', 1)[0].trim();
-			if (config.mediaType !== 'text/html' && config.mediaType !== 'application/xhtml+xml') return
-
-			config.text = await response.text();
-			if (!send(config.srcElement, 'after', {config})) return
-		} catch(error) {
-			send(config.srcElement, 'error', {config, error})
-			return
-		} finally {
-			send(config.srcElement, 'finally', {config})
-		}
-
-		if (config.response.redirected) {
-			const redirectedTo = new URL(config.response.url);
-			if (redirectedTo.origin !== config.to.origin) return;
-			config.to = redirectedTo;
-		}
-
-		let newDoc = parser.parseFromString(config.text, config.mediaType);
-		newDoc.querySelectorAll('noscript').forEach((el) => el.remove());
-
-		// If ClientRouter is not enabled on the incoming page, do a full page load to it.
-		// Unless this was a form submission, in which case we do not want to trigger another mutation.
-		if (!enabled(newDoc) && !config.body) return
-
-		const links = preloadStyles(newDoc)
-		links.length && !config.signal.aborted && (await Promise.all(links))
-
-		return newDoc
 	}
 
 	try {
