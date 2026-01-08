@@ -271,7 +271,7 @@ function preloadStyles(newDoc: Document) {
 		})
 }
 
-async function transition(direction: Direction, from: URL, to: URL, options: Options, historyState?: State) {
+async function process(direction: Direction, from: URL, to: URL, options: Options, historyState?: State) {
 	abortController?.abort()
 	abortController = new AbortController()
 
@@ -403,7 +403,7 @@ async function transition(direction: Direction, from: URL, to: URL, options: Opt
 }
 
 export async function navigate(to: string | URL, options?: Options) {
-	await transition('forward', currentUrl, typeof to === 'string' ? new URL(to, location.href) : to, options ?? {})
+	await process('forward', currentUrl, typeof to === 'string' ? new URL(to, location.href) : to, options ?? {})
 }
 
 // initialization
@@ -489,7 +489,7 @@ function start() {
 		const nextIndex = state.index
 		const direction: Direction = nextIndex > currentHistoryIndex ? 'forward' : 'back'
 		currentHistoryIndex = nextIndex
-		transition(direction, currentUrl, new URL(location.href), {}, state)
+		process(direction, currentUrl, new URL(location.href), {}, state)
 	})
 
 	if (history.state) {
