@@ -35,7 +35,6 @@ let PERSIST_ATTR = 'data-hop-transition-persist'
 let DISABLED_ATTR = 'data-hop'
 
 let started = false
-let lastClickedElementLeavingWindow: EventTarget | null = null
 
 let abortController: AbortController | undefined
 let currentTransition: ViewTransition | undefined
@@ -110,11 +109,11 @@ async function fetchHtml(config: Config): Promise<Document | undefined> {
 		if (!send(config.srcElement, 'before', { config })) return
 		let response = config.response = await fetch(config.to.href, config)
 
-		const contentType = response.headers.get('content-type') ?? '';
-		config.mediaType = contentType.split(';', 1)[0].trim();
+		const contentType = response.headers.get('content-type') ?? ''
+		config.mediaType = contentType.split(';', 1)[0].trim()
 		if (config.mediaType !== 'text/html' && config.mediaType !== 'application/xhtml+xml') return
 
-		config.text = await response.text();
+		config.text = await response.text()
 		if (!send(config.srcElement, 'after', {config})) return
 	} catch(error) {
 		send(config.srcElement, 'error', {config, error})
@@ -124,13 +123,13 @@ async function fetchHtml(config: Config): Promise<Document | undefined> {
 	}
 
 	if (config.response.redirected) {
-		const redirectedTo = new URL(config.response.url);
-		if (redirectedTo.origin !== config.to.origin) return;
-		config.to = redirectedTo;
+		const redirectedTo = new URL(config.response.url)
+		if (redirectedTo.origin !== config.to.origin) return
+		config.to = redirectedTo
 	}
 
-	let newDoc = parser.parseFromString(config.text, config.mediaType);
-	newDoc.querySelectorAll('noscript').forEach((el) => el.remove());
+	let newDoc = parser.parseFromString(config.text, config.mediaType)
+	newDoc.querySelectorAll('noscript').forEach((el) => el.remove())
 
 	// If ClientRouter is not enabled on the incoming page, do a full page load to it.
 	// Unless this was a form submission, in which case we do not want to trigger another mutation.
@@ -144,12 +143,11 @@ async function fetchHtml(config: Config): Promise<Document | undefined> {
 
 function swapRootAttributes(newDoc: Document) {
 	const currentRoot = document.documentElement
-	const nonOverridableAttributes = [...currentRoot.attributes].filter(
+	const persistedAttrs = [...currentRoot.attributes].filter(
 		({ name }) => (currentRoot.removeAttribute(name), [DIRECTION_ATTR].includes(name))
-	);
-	[...newDoc.documentElement.attributes, ...nonOverridableAttributes].forEach(
-		({ name, value }) => currentRoot.setAttribute(name, value)
 	)
+	const attrs = [...newDoc.documentElement.attributes, ...persistedAttrs]
+	attrs.forEach(({ name, value }) => currentRoot.setAttribute(name, value))
 }
 
 function swapHeadElements(newDoc: Document) {
@@ -166,16 +164,13 @@ function swapHeadElements(newDoc: Document) {
 
 function swapBodyElement(newBody: HTMLElement) {
 	const oldBody = document.body
-	oldBody.replaceWith(newBody) // Note: resets scroll position
+	oldBody.replaceWith(newBody) // resets scroll position
 
 	for (const el of oldBody.querySelectorAll(`[${PERSIST_ATTR}]`)) {
 		const id = el.getAttribute(PERSIST_ATTR)
-		const newEl = newBody.querySelector(`[${PERSIST_ATTR}="${id}"]`)
-		if (newEl) newEl.replaceWith(el)
+		newBody.querySelector(`[${PERSIST_ATTR}="${id}"]`)?.replaceWith(el)
 	}
 	flagNewScripts(newBody.getElementsByTagName('script'))
-
-	// This will upgrade any Declarative Shadow DOM in the new body.
 	attachShadowRoots(newBody)
 }
 
@@ -224,38 +219,38 @@ function runScripts() {
 	let runnable = [...document.scripts].filter(
 		script => (script as any).__new && script.dataset.hopEval !== 'false'
 	)
-	let wait: Promise<any> = Promise.resolve();
-	let needsWaitForInlineModuleScript = false;
+	let wait: Promise<any> = Promise.resolve()
+	let needsWaitForInlineModuleScript = false
 	// Inline module scripts are deferred but still executed in order.
 	// They can not be awaited for with onload.
 	// Thus to be able to wait for the execution of all scripts, we make sure that the last inline module script
 	// is always followed by an external module script
 	for (const script of runnable) {
 		script.getAttribute('type') === 'module' &&
-			(needsWaitForInlineModuleScript = script.getAttribute('src') === null);
+			(needsWaitForInlineModuleScript = script.getAttribute('src') === null)
 	}
 	needsWaitForInlineModuleScript &&
 		document.body.insertAdjacentHTML(
 			'beforeend',
 			`<script type="module" src="data:application/javascript,"/>`,
-		);
+		)
 
 	for (const script of runnable) {
 		const type = script.getAttribute('type')
 		if (type && type !== 'module' && type !== 'text/javascript') continue
 
-		const newScript = document.createElement('script');
-		newScript.innerHTML = script.innerHTML;
+		const newScript = document.createElement('script')
+		newScript.innerHTML = script.innerHTML
 		for (const attr of script.attributes) {
 			if (attr.name === 'src') {
 				const p = new Promise((r) => newScript.onload = newScript.onerror = r)
 				wait = wait.then(() => p)
 			}
-			newScript.setAttribute(attr.name, attr.value);
+			newScript.setAttribute(attr.name, attr.value)
 		}
-		script.replaceWith(newScript);
+		script.replaceWith(newScript)
 	}
-	return wait;
+	return wait
 }
 
 function preloadStyles(newDoc: Document) {
@@ -294,7 +289,7 @@ async function transition(direction: Direction, from: URL, to: URL, options: Opt
 		srcElement: options.srcElement,
 		signal: abortController.signal,
 		body: options.body,
-	};
+	}
 
 	if (config.navigationType !== 'traverse') saveScrollPosition()
 	if (samePage(from, to) && !options.body) {
@@ -304,7 +299,7 @@ async function transition(direction: Direction, from: URL, to: URL, options: Opt
 		}
 	}
 
-	let newDoc: Document | undefined;
+	let newDoc: Document | undefined
 	if (send(config.srcElement, 'config', { config })) {
 		if (newDoc = await fetchHtml(config)) {
 			if (config.navigationType === 'traverse') saveScrollPosition()
@@ -316,65 +311,9 @@ async function transition(direction: Direction, from: URL, to: URL, options: Opt
 		return
 	}
 
-	function moveToLocation(title: string, historyState?: State) {
-		updateHistory(config, title, historyState)
-		scroll(config.from, config.to, historyState)
-	}
-
-	function updateHistory(config: Config, title: string, historyState?: State) {
-		const { to, navigationType } = config
-
-		const targetTitle = document.title
-		document.title = title
-
-		if (to.href !== location.href && !historyState) {
-			if (navigationType === 'replace') {
-				history.replaceState(history.state, '', to.href)
-			} else {
-				history.pushState({ index: ++currentHistoryIndex, scrollX: 0, scrollY: 0 }, '', to.href)
-			}
-		}
-		document.title = targetTitle
-		currentUrl = to
-	}
-
-	function scroll(from: URL, to: URL, historyState?: State) {
-		let scrollToOpts: ScrollToOptions = { left: 0, top: 0, behavior: 'instant' }
-
-		if (historyState) {
-			scrollToOpts = { left: historyState.scrollX, top: historyState.scrollY }
-		} else {
-			if (to.hash) {
-				// because we are already on the target page ...
-				// ... what comes next is a intra-page navigation
-				// that won't reload the page but instead scroll to the fragment
-				history.scrollRestoration = 'auto';
-				const savedState = history.state;
-				location.href = to.href; // this kills the history state on Firefox
-				if (!history.state) {
-					history.replaceState(savedState, '') // this restores the history state
-					if (samePage(from, to)) window.dispatchEvent(new PopStateEvent('popstate'))
-				}
-				history.scrollRestoration = 'manual'
-				return
-			}
-		}
-		scrollTo(scrollToOpts)
-		history.scrollRestoration = 'manual'
-	}
-
-	async function updateDOM(newDoc: Document, historyState?: State) {
-		const title = document.title
-		swapRootAttributes(newDoc)
-		swapHeadElements(newDoc)
-		withRestoredFocus(() => {
-			swapBodyElement(newDoc.body)
-		})
-		moveToLocation(title, historyState)
-	}
-
 	try {
 		currentTransition?.skipTransition()
+		await currentTransition?.updateCallbackDone
 	} catch {
 		// ignore
 	}
@@ -404,6 +343,63 @@ async function transition(direction: Direction, from: URL, to: URL, options: Opt
 		currentTransition = void 0
 		document.documentElement.removeAttribute(DIRECTION_ATTR)
 	})
+
+	async function updateDOM(newDoc: Document, historyState?: State) {
+		const title = document.title
+		swapRootAttributes(newDoc)
+		swapHeadElements(newDoc)
+		withRestoredFocus(() => {
+			swapBodyElement(newDoc.body)
+		})
+		moveToLocation(title, historyState)
+	}
+
+	function moveToLocation(title: string, historyState?: State) {
+		updateHistory(title, historyState)
+		scroll(config.from, config.to, historyState)
+	}
+
+	function updateHistory(title: string, historyState?: State) {
+		const { to, navigationType } = config
+
+		const targetTitle = document.title
+		document.title = title
+
+		if (to.href !== location.href && !historyState) {
+			if (navigationType === 'replace') {
+				history.replaceState(history.state, '', to.href)
+			} else {
+				history.pushState({ index: ++currentHistoryIndex, scrollX: 0, scrollY: 0 }, '', to.href)
+			}
+		}
+		document.title = targetTitle
+		currentUrl = to
+	}
+
+	function scroll(from: URL, to: URL, historyState?: State) {
+		let scrollToOpts: ScrollToOptions = { left: 0, top: 0, behavior: 'instant' }
+
+		if (historyState) {
+			scrollToOpts = { left: historyState.scrollX, top: historyState.scrollY }
+		} else {
+			if (to.hash) {
+				// because we are already on the target page ...
+				// ... what comes next is a intra-page navigation
+				// that won't reload the page but instead scroll to the fragment
+				history.scrollRestoration = 'auto'
+				const savedState = history.state
+				location.href = to.href; // this kills the history state on Firefox
+				if (!history.state) {
+					history.replaceState(savedState, '') // this restores the history state
+					if (samePage(from, to)) window.dispatchEvent(new PopStateEvent('popstate'))
+				}
+				history.scrollRestoration = 'manual'
+				return
+			}
+		}
+		scrollTo(scrollToOpts)
+		history.scrollRestoration = 'manual'
+	}
 }
 
 export async function navigate(to: string | URL, options?: Options) {
@@ -413,6 +409,8 @@ export async function navigate(to: string | URL, options?: Options) {
 // initialization
 function start() {
 	if (started || !enabled()) return
+
+	let lastClickedElementLeavingWindow: EventTarget | null = null
 
 	document.addEventListener('click', (ev) => {
 		let link = ev.target
@@ -487,11 +485,11 @@ function start() {
 
 		// Our transition entries always have state. Ignore stateless entries.
 		if (ev.state === null) return
-		const state: State = history.state;
-		const nextIndex = state.index;
-		const direction: Direction = nextIndex > currentHistoryIndex ? 'forward' : 'back';
-		currentHistoryIndex = nextIndex;
-		transition(direction, currentUrl, new URL(location.href), {}, state);
+		const state: State = history.state
+		const nextIndex = state.index
+		const direction: Direction = nextIndex > currentHistoryIndex ? 'forward' : 'back'
+		currentHistoryIndex = nextIndex
+		transition(direction, currentUrl, new URL(location.href), {}, state)
 	})
 
 	if (history.state) {
