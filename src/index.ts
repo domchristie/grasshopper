@@ -265,7 +265,7 @@ function preloadStyles(newDoc: Document) {
 		})
 }
 
-export async function navigate(to: URL | string, options: Partial<Config>) {
+export async function hop(to: URL | string, options: Partial<Config>) {
 	to = to instanceof URL ? to : new URL(to, location.href)
 	abortController?.abort()
 	abortController = new AbortController()
@@ -427,7 +427,7 @@ function start() {
 		) return
 
 		ev.preventDefault()
-		navigate(href, {
+		hop(href, {
 			srcElement: link,
 			navigationType: link.dataset.hopType === 'replace' ? 'replace' : undefined
 		})
@@ -457,7 +457,7 @@ function start() {
 			body = new URLSearchParams(body as any)
 		}
 		ev.preventDefault()
-		navigate(action, {
+		hop(action, {
 			srcElement: submitter ?? form,
 			method,
 			body,
@@ -479,7 +479,7 @@ function start() {
 		const nextIndex = state.index
 		const direction: Direction = nextIndex > currentHistoryIndex ? 'forward' : 'back'
 		currentHistoryIndex = nextIndex
-		navigate(location.href, { direction, from: currentUrl, historyState: state })
+		hop(location.href, { direction, from: currentUrl, historyState: state })
 	})
 
 	if (history.state) {
