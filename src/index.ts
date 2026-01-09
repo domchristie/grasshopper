@@ -53,7 +53,7 @@ function enabled(el: Element | Document = document) {
 
 let samePage = (url: URL, otherUrl: URL) => url.pathname === otherUrl.pathname && url.search === otherUrl.search
 
-let send = (elt: Element | Document = document, type: string, detail?: any, bub?: boolean) => elt.dispatchEvent(new CustomEvent("hop:" + type, { detail, cancelable: true, bubbles: bub !== false, composed: true }))
+let send = (el: Element | Document = document, type: string, detail?: any, bub?: boolean) => el.dispatchEvent(new CustomEvent("hop:" + type, { detail, cancelable: true, bubbles: bub !== false, composed: true }))
 
 let leavesWindow = (ev: MouseEvent) =>
 	(ev.button && ev.button !== 0) || // left clicks only
