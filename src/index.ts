@@ -1,12 +1,5 @@
 type Direction = 'forward' | 'back'
 type NavigationTypeString = 'push' | 'replace' | 'traverse'
-type Options = {
-	srcElement?: Element
-	trigger?: Event
-	method?: 'get' | 'post'
-	history?: 'auto' | 'push' | 'replace'
-	body?: string | FormData | URLSearchParams
-}
 type Config = {
 	from: URL,
 	to: URL,
@@ -14,9 +7,10 @@ type Config = {
 	srcElement?: Element,
 	trigger?: Event,
 	navigationType: NavigationTypeString,
+	historyState?: State,
 
 	method?: 'GET' | 'POST' | 'PUT' | 'DELETE',
-	body?: string | ArrayBuffer | Blob | DataView | File | FormData | URLSearchParams | ReadableStream,
+	body?: string | FormData | URLSearchParams,
 	headers?: Headers | {},
 	signal: AbortSignal,
 
@@ -271,7 +265,8 @@ function preloadStyles(newDoc: Document) {
 		})
 }
 
-async function process(direction: Direction, from: URL, to: URL, options: Options, historyState?: State) {
+export async function navigate(to: URL | string, options: Partial<Config>) {
+	to = to instanceof URL ? to : new URL(to, location.href)
 	abortController?.abort()
 	abortController = new AbortController()
 
@@ -282,19 +277,18 @@ async function process(direction: Direction, from: URL, to: URL, options: Option
 	}
 
 	let config: Config = {
-		from,
+		from: currentUrl,
 		to,
-		direction,
-		navigationType: historyState ? 'traverse' : (options.history === 'replace' ? 'replace' : 'push'),
-		srcElement: options.srcElement,
+		direction: 'forward',
+		navigationType: options.historyState ? 'traverse' : (options.navigationType === 'replace' ? 'replace' : 'push'),
 		signal: abortController.signal,
-		body: options.body,
+		...options
 	}
 
 	if (config.navigationType !== 'traverse') saveScrollPosition()
-	if (samePage(from, to) && !options.body) {
-		if ((direction !== 'back' && to.hash) || (direction === 'back' && from.hash)) {
-			moveToLocation(document.title, historyState)
+	if (samePage(config.from, to) && !config.body) {
+		if ((config.direction !== 'back' && to.hash) || (config.direction === 'back' && config.from.hash)) {
+			moveToLocation(document.title, config.historyState)
 			return
 		}
 	}
@@ -326,12 +320,12 @@ async function process(direction: Direction, from: URL, to: URL, options: Option
 		// This automatically cancels any previous transition
 		// We also already took care that the earlier update callback got through
 		currentTransition = document.startViewTransition(
-			async () => await updateDOM(newDoc, historyState)
+			async () => await updateDOM(newDoc, config.historyState)
 		)
 		domUpdated = currentTransition.updateCallbackDone
 		transitionFinished = currentTransition.finished
 	} else {
-		await updateDOM(newDoc, historyState)
+		await updateDOM(newDoc, config.historyState)
 	}
 	domUpdated.finally(async () => {
 		send(document, 'swapped', { config })
@@ -402,10 +396,6 @@ async function process(direction: Direction, from: URL, to: URL, options: Option
 	}
 }
 
-export async function navigate(to: string | URL, options?: Options) {
-	await process('forward', currentUrl, typeof to === 'string' ? new URL(to, location.href) : to, options ?? {})
-}
-
 // initialization
 function start() {
 	if (started || !enabled()) return
@@ -439,7 +429,7 @@ function start() {
 		ev.preventDefault()
 		navigate(href, {
 			srcElement: link,
-			history: link.dataset.hopHistory === 'replace' ? 'replace' : 'auto'
+			navigationType: link.dataset.hopType === 'replace' ? 'replace' : undefined
 		})
 	})
 
@@ -471,7 +461,7 @@ function start() {
 			srcElement: submitter ?? form,
 			method,
 			body,
-			history: (submitter ?? form).dataset.hopHistory === 'replace' ? 'replace' : 'auto'
+			navigationType: (submitter ?? form).dataset.hopType === 'replace' ? 'replace' : undefined
 		})
 	})
 
@@ -489,7 +479,7 @@ function start() {
 		const nextIndex = state.index
 		const direction: Direction = nextIndex > currentHistoryIndex ? 'forward' : 'back'
 		currentHistoryIndex = nextIndex
-		process(direction, currentUrl, new URL(location.href), {}, state)
+		navigate(location.href, { direction, from: currentUrl, historyState: state })
 	})
 
 	if (history.state) {
