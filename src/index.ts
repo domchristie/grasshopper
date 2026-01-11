@@ -98,39 +98,39 @@ function announce() {
 	)
 }
 
-async function fetchHtml(config: Config): Promise<Document | undefined> {
+async function fetchHtml(cfg: Config): Promise<Document | undefined> {
 	try {
-		if (!send(config.srcElement, 'before', { config })) return
-		let response = config.response = await fetch(config.to.href, config)
+		if (!send(cfg.srcElement, 'before', { cfg })) return
+		let response = cfg.response = await fetch(cfg.to.href, cfg)
 
 		const contentType = response.headers.get('content-type') ?? ''
-		config.mediaType = contentType.split(';', 1)[0].trim()
-		if (config.mediaType !== 'text/html' && config.mediaType !== 'application/xhtml+xml') return
+		cfg.mediaType = contentType.split(';', 1)[0].trim()
+		if (cfg.mediaType !== 'text/html' && cfg.mediaType !== 'application/xhtml+xml') return
 
-		config.text = await response.text()
-		if (!send(config.srcElement, 'after', {config})) return
+		cfg.text = await response.text()
+		if (!send(cfg.srcElement, 'after', {cfg})) return
 	} catch(error) {
-		send(config.srcElement, 'error', {config, error})
+		send(cfg.srcElement, 'error', {cfg, error})
 		return
 	} finally {
-		send(config.srcElement, 'finally', {config})
+		send(cfg.srcElement, 'finally', {cfg})
 	}
 
-	if (config.response.redirected) {
-		const redirectedTo = new URL(config.response.url)
-		if (redirectedTo.origin !== config.to.origin) return
-		config.to = redirectedTo
+	if (cfg.response.redirected) {
+		const redirectedTo = new URL(cfg.response.url)
+		if (redirectedTo.origin !== cfg.to.origin) return
+		cfg.to = redirectedTo
 	}
 
-	let newDoc = parser.parseFromString(config.text, config.mediaType)
+	let newDoc = parser.parseFromString(cfg.text, cfg.mediaType)
 	newDoc.querySelectorAll('noscript').forEach((el) => el.remove())
 
 	// If ClientRouter is not enabled on the incoming page, do a full page load to it.
 	// Unless this was a form submission, in which case we do not want to trigger another mutation.
-	if (!enabled(newDoc) && !config.body) return
+	if (!enabled(newDoc) && !cfg.body) return
 
 	const links = preloadStyles(newDoc)
-	links.length && !config.signal.aborted && (await Promise.all(links))
+	links.length && !cfg.signal.aborted && (await Promise.all(links))
 
 	return newDoc
 }
@@ -276,7 +276,7 @@ export async function hop(to: URL | string, options: Partial<Config>) {
 		return
 	}
 
-	let config: Config = {
+	let cfg: Config = {
 		from: currentUrl,
 		to,
 		direction: 'forward',
@@ -285,20 +285,20 @@ export async function hop(to: URL | string, options: Partial<Config>) {
 		...options
 	}
 
-	if (config.navigationType !== 'traverse') saveScrollPosition()
-	if (samePage(config.from, to) && !config.body) {
-		if ((config.direction !== 'back' && to.hash) || (config.direction === 'back' && config.from.hash)) {
-			moveToLocation(document.title, config.historyState)
+	if (cfg.navigationType !== 'traverse') saveScrollPosition()
+	if (samePage(cfg.from, cfg.to) && !cfg.body) {
+		if ((cfg.direction !== 'back' && cfg.to.hash) || (cfg.direction === 'back' && cfg.from.hash)) {
+			moveToLocation(document.title)
 			return
 		}
 	}
 
 	let newDoc: Document | undefined
-	if (send(config.srcElement, 'config', { config })) {
-		if (newDoc = await fetchHtml(config)) {
-			if (config.navigationType === 'traverse') saveScrollPosition()
+	if (send(cfg.srcElement, 'config', { cfg })) {
+		if (newDoc = await fetchHtml(cfg)) {
+			if (cfg.navigationType === 'traverse') saveScrollPosition()
 		} else {
-			location.href = to.href
+			location.href = cfg.to.href
 			return
 		}
 	} else {
@@ -312,7 +312,7 @@ export async function hop(to: URL | string, options: Partial<Config>) {
 		// ignore
 	}
 
-	document.documentElement.setAttribute(DIRECTION_ATTR, config.direction)
+	document.documentElement.setAttribute(DIRECTION_ATTR, cfg.direction)
 
 	let domUpdated: Promise<void> = Promise.resolve()
 	let transitionFinished: Promise<void> = Promise.resolve()
@@ -320,15 +320,15 @@ export async function hop(to: URL | string, options: Partial<Config>) {
 		// This automatically cancels any previous transition
 		// We also already took care that the earlier update callback got through
 		currentTransition = document.startViewTransition(
-			async () => await updateDOM(newDoc, config.historyState)
+			async () => await updateDOM(newDoc)
 		)
 		domUpdated = currentTransition.updateCallbackDone
 		transitionFinished = currentTransition.finished
 	} else {
-		await updateDOM(newDoc, config.historyState)
+		await updateDOM(newDoc)
 	}
 	domUpdated.finally(async () => {
-		send(document, 'swapped', { config })
+		send(document, 'swapped', { cfg })
 		await runScripts()
 		send(document, 'load')
 		announce()
@@ -338,28 +338,28 @@ export async function hop(to: URL | string, options: Partial<Config>) {
 		document.documentElement.removeAttribute(DIRECTION_ATTR)
 	})
 
-	async function updateDOM(newDoc: Document, historyState?: State) {
+	async function updateDOM(newDoc: Document) {
 		const title = document.title
 		swapRootAttributes(newDoc)
 		swapHeadElements(newDoc)
 		withRestoredFocus(() => {
 			swapBodyElement(newDoc.body)
 		})
-		moveToLocation(title, historyState)
+		moveToLocation(title)
 	}
 
-	function moveToLocation(title: string, historyState?: State) {
-		updateHistory(title, historyState)
-		scroll(config.from, config.to, historyState)
+	function moveToLocation(title: string) {
+		updateHistory(title)
+		scroll()
 	}
 
-	function updateHistory(title: string, historyState?: State) {
-		const { to, navigationType } = config
+	function updateHistory(title: string) {
+		const { to, navigationType } = cfg
 
 		const targetTitle = document.title
 		document.title = title
 
-		if (to.href !== location.href && !historyState) {
+		if (to.href !== location.href && !cfg.historyState) {
 			if (navigationType === 'replace') {
 				history.replaceState(history.state, '', to.href)
 			} else {
@@ -370,7 +370,8 @@ export async function hop(to: URL | string, options: Partial<Config>) {
 		currentUrl = to
 	}
 
-	function scroll(from: URL, to: URL, historyState?: State) {
+	function scroll() {
+		let { from, to, historyState, navigationType } = cfg
 		let scrollToOpts: ScrollToOptions = { left: 0, top: 0, behavior: 'instant' }
 
 		if (historyState) {
@@ -402,7 +403,7 @@ function start() {
 
 	let lastClickedElementLeavingWindow: EventTarget | null = null
 
-	document.addEventListener('click', (ev) => {
+	addEventListener('click', (ev) => {
 		let link = ev.target
 		lastClickedElementLeavingWindow = leavesWindow(ev) ? link : null
 
@@ -433,7 +434,7 @@ function start() {
 		})
 	})
 
-	document.addEventListener('submit', (ev) => {
+	addEventListener('submit', (ev) => {
 		let el = ev.target as HTMLElement
 		let submitter = ev.submitter
 
