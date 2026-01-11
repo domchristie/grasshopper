@@ -52,6 +52,8 @@ function enabled(el: Element | Document = document) {
 }
 
 let samePage = (url: URL, otherUrl: URL) => url.pathname === otherUrl.pathname && url.search === otherUrl.search
+let isRefresh = (from: URL, to: URL, navigationType: NavigationType) => from.pathname === to.pathname && navigationType === 'replace'
+let refreshScrollBehavior = () => document.querySelector('meta[name="hop-refresh-scroll"]')?.getAttribute('content')
 
 let send = (el: Element | Document = document, type: string, detail?: any, bub?: boolean) => el.dispatchEvent(new CustomEvent("hop:" + type, { detail, cancelable: true, bubbles: bub !== false, composed: true }))
 
@@ -376,6 +378,9 @@ export async function hop(to: URL | string, options: Partial<Config>) {
 
 		if (historyState) {
 			scrollToOpts = { left: historyState.scrollX, top: historyState.scrollY }
+		} else if (isRefresh(to, from, navigationType) && refreshScrollBehavior() === 'preserve') {
+			history.scrollRestoration = 'manual'
+			return
 		} else {
 			if (to.hash) {
 				// because we are already on the target page ...
