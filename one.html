@@ -11,9 +11,9 @@
 <body>
 <a href="/">Index</a>
 <a href="/#fragment">Index fragment</a>
-<p data-hop-transition-persist="p">One</p>
+<p id="p" data-hop-persist>One</p>
 <form method="get" action="/">
-  <input type="submit" data-hop-transition-persist="1">
+  <input type="submit" data-hop-persist id="submit">
 </form>
 <script>console.log('from <body> on one.html')</script>
 <script data-hop-eval="false">console.log('from <body> on one.html but only on the first load')</script>

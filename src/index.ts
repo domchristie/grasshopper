@@ -25,7 +25,7 @@ type State = {
 }
 
 let DIRECTION_ATTR = 'data-hop-direction'
-let PERSIST_ATTR = 'data-hop-transition-persist'
+let PERSIST_ATTR = 'data-hop-persist'
 let DISABLED_ATTR = 'data-hop'
 
 let started = false
@@ -163,8 +163,7 @@ function swapBodyElement(newBody: HTMLElement) {
 	oldBody.replaceWith(newBody) // resets scroll position
 
 	for (const el of oldBody.querySelectorAll(`[${PERSIST_ATTR}]`)) {
-		const id = el.getAttribute(PERSIST_ATTR)
-		newBody.querySelector(`[${PERSIST_ATTR}="${id}"]`)?.replaceWith(el)
+		newBody.querySelector(`#${el.id}[${PERSIST_ATTR}]`)?.replaceWith(el)
 	}
 	flagNewScripts(newBody.getElementsByTagName('script'))
 	attachShadowRoots(newBody)

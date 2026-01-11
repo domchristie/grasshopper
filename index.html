@@ -15,11 +15,11 @@
 <a href="one.html">One</a>
 <a href="one.html" data-hop="false">One with disabled</a>
 <a href="#fragment">Fragment</a>
-<p data-hop-transition-persist="p">Index</p>
+<p id="p" data-hop-persist>Index</p>
 <form method="get" action="/one.html">
-  <input type="submit" data-hop-transition-persist="1">
+  <input type="submit" data-hop-persist id="submit">
 </form>
 <p id="fragment" style="margin: 100vh 0">Fragment</p>
-<a href="/" data-hop-type="replace">Refresh</a>
+<a href="/" data-hop-type="replace" tabindex="0" data-hop-persist id="refresh">Refresh</a>
 </body>
 </html>

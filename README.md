@@ -12,7 +12,7 @@ Extracts the navigation system from the view transition code in [Astro](https://
 
 **Persistent Elements**
 ```html
-<audio data-hop-transition-persist="unique_id" …></audio>
+<audio data-hop-persist id="unique_id" …></audio>
 ```
 
 **Disabling on a link/form**
