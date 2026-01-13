@@ -297,7 +297,7 @@ export async function hop(to: URL | string, options: Partial<Config>) {
 	let newDoc: Document | undefined
 	if (send(cfg.srcElement, 'config', { cfg })) {
 		if (newDoc = await fetchHtml(cfg)) {
-			if (cfg.navigationType === 'traverse') saveScrollPosition()
+			if (cfg.navigationType !== 'traverse') saveScrollPosition()
 		} else {
 			location.href = cfg.to.href
 			return
