@@ -288,7 +288,7 @@ export async function hop(to: URL | string, options: Partial<Config>) {
 
 	if (cfg.navigationType !== 'traverse') saveScrollPosition()
 	if (isSamePage(cfg.from, cfg.to) && !cfg.body) {
-		if ((cfg.direction !== 'back' && cfg.to.hash) || (cfg.direction === 'back' && cfg.from.hash)) {
+		if ((cfg.direction === 'forward' && cfg.to.hash) || (cfg.direction === 'back' && cfg.from.hash)) {
 			moveToLocation(document.title)
 			return
 		}
