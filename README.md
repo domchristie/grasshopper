@@ -10,6 +10,12 @@ Extracts the navigation system from the view transition code in [Astro](https://
 <meta name="hop" content="true" />
 ```
 
+**Refresh Scroll Behavior**
+```html
+<meta name="hop-refresh-scroll" content="preserve">
+```
+When present, the scroll position will be maintained during a page navigation if the from/to pathnames match and the navigation type is `replace`.
+
 **Persistent Elements**
 ```html
 <audio data-hop-persist id="unique_id" …></audio>
@@ -23,5 +29,4 @@ This bypasses the fetch-based navigation and instead uses the default browser be
 
 ## TODO
 
-- [ ] Implement `data-hop-transition-track="reload"`
-- [ ] Page refreshes that maintain scroll position
+- [ ] Implement `data-hop-track="reload"`
