@@ -51,7 +51,7 @@ function enabled(el: Element | Document = document) {
 	}
 }
 
-let samePage = (url: URL, otherUrl: URL) => url.pathname === otherUrl.pathname && url.search === otherUrl.search
+let isSamePage = (url: URL, otherUrl: URL) => url.pathname === otherUrl.pathname && url.search === otherUrl.search
 let isRefresh = (from: URL, to: URL, navigationType: NavigationType) => from.pathname === to.pathname && navigationType === 'replace'
 let refreshScrollBehavior = () => document.querySelector('meta[name="hop-refresh-scroll"]')?.getAttribute('content')
 
@@ -287,7 +287,7 @@ export async function hop(to: URL | string, options: Partial<Config>) {
 	}
 
 	if (cfg.navigationType !== 'traverse') saveScrollPosition()
-	if (samePage(cfg.from, cfg.to) && !cfg.body) {
+	if (isSamePage(cfg.from, cfg.to) && !cfg.body) {
 		if ((cfg.direction !== 'back' && cfg.to.hash) || (cfg.direction === 'back' && cfg.from.hash)) {
 			moveToLocation(document.title)
 			return
@@ -390,7 +390,7 @@ export async function hop(to: URL | string, options: Partial<Config>) {
 				location.href = to.href; // this kills the history state on Firefox
 				if (!history.state) {
 					history.replaceState(savedState, '') // this restores the history state
-					if (samePage(from, to)) window.dispatchEvent(new PopStateEvent('popstate'))
+					if (isSamePage(from, to)) window.dispatchEvent(new PopStateEvent('popstate'))
 				}
 				history.scrollRestoration = 'manual'
 				return
