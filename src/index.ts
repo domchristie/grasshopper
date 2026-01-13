@@ -45,7 +45,7 @@ let parser = new DOMParser()
 
 function enabled(el: Element | Document = document) {
 	if (el instanceof Document) {
-		return el.querySelector('[name="hop-view-transitions-enabled"]')
+		return el.querySelector('[name="hop"][content="true"]')
 	} else if (el instanceof Element) {
 		return !(el.closest(`[${DISABLED_ATTR}]`)?.getAttribute(DISABLED_ATTR) === 'false')
 	}

@@ -7,7 +7,7 @@ Extracts the navigation system from the view transition code in [Astro](https://
 
 **Enabling**
 ```html
-<meta name="hop-view-transitions-enabled" content="true" />
+<meta name="hop" content="true" />
 ```
 
 **Persistent Elements**
