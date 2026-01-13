@@ -17,7 +17,7 @@ Extracts the navigation system from the view transition code in [Astro](https://
 
 **Disabling on a link/form**
 ```html
-<a data-hop-reload …>
+<a data-hop="false" …>
 ```
 This bypasses the fetch-based navigation and instead uses the default browser behaviour.
 
