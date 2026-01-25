@@ -230,14 +230,13 @@ function start() {
 	resetViewTransition()
 
 	navigation.addEventListener('navigate', function (ev) {
-		const sourceElement = ev.sourceElement || undefined
 		if (
 			!ev.canIntercept ||
 			ev.info?.hop === false ||
 			ev.downloadRequest ||
 			isHashChange(ev) ||
-			!enabled(sourceElement) ||
-			!send(sourceElement, 'before-intercept')
+			!enabled(ev.sourceElement) ||
+			!send(ev.sourceElement, 'before-intercept')
 		) return
 
 		let newDoc: Document
@@ -293,14 +292,14 @@ addEventListener('DOMContentLoaded', start)
 const createEvent = (type: string, detail: {}) =>
 	new CustomEvent("hop:" + type, { detail, cancelable: true, bubbles: true, composed: true })
 
-const send = (el: Element | Document = document, type: string, detail = {}) =>
-	el.dispatchEvent(createEvent(type, detail))
+const send = (el, type, detail = {}) =>
+	(el || document).dispatchEvent(createEvent(type, detail))
 
-async function sendInterceptable(el: Element | Document = document, type: string, detail = {}) {
+async function sendInterceptable(el, type, detail = {}) {
 	let ev = createEvent(type, detail)
 	let intercept = () => Promise.resolve(true)
 	ev.intercept = (callback) => intercept = callback
-	return el.dispatchEvent(ev) && await intercept()
+	return (el || document).dispatchEvent(ev) && await intercept()
 }
 
 const resetViewTransition = () => viewTransition = {
