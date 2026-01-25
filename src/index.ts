@@ -308,12 +308,12 @@ const resetViewTransition = () => viewTransition = {
 	skipTransition: () => {}
 }
 
-function enabled(el: Element | Document = document) {
-	if (el instanceof Document) {
-		return el.querySelector('[name="hop"][content="true"]')
-	} else if (el instanceof Element) {
+function enabled(el) {
+	if (el instanceof Element) {
 		return !(el.closest(`[${DISABLED_ATTR}]`)
 			?.getAttribute(DISABLED_ATTR) === 'false')
+	} else {
+		return document.querySelector('[name="hop"][content="true"]')
 	}
 }
 
