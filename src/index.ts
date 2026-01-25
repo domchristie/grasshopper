@@ -1,93 +1,77 @@
-type Direction = 'forward' | 'back' | 'none'
-type NavigationTypeString = 'push' | 'replace' | 'traverse'
-type Config = {
-	from: URL,
-	to: URL,
-	direction: Direction,
-	srcElement?: Element,
-	trigger?: Event,
-	navigationType: NavigationTypeString,
-
-	method?: 'GET' | 'POST' | 'PUT' | 'DELETE',
-	body?: string | FormData | URLSearchParams,
-	headers?: Headers | {},
-	signal: AbortSignal,
-
-	response?: Response,
-	mediaType?: string,
-	text?: string,
-}
-
-let DIRECTION_ATTR = 'data-hop-direction'
-let PERSIST_ATTR = 'data-hop-persist'
-let DISABLED_ATTR = 'data-hop'
+const MEDIA_TYPES = ['text/html', 'application/xhtml+xml']
+const DIRECTION_ATTR = 'data-hop-direction'
+const PERSIST_ATTR = 'data-hop-persist'
+const DISABLED_ATTR = 'data-hop'
 
 let started = false
-let currentTransition: ViewTransition | undefined
-let parser
+let parser: DOMParser
+let viewTransition
 
-function enabled(el: Element | Document = document) {
-	if (el instanceof Document) {
-		return el.querySelector('[name="hop"][content="true"]')
-	} else if (el instanceof Element) {
-		return !(el.closest(`[${DISABLED_ATTR}]`)?.getAttribute(DISABLED_ATTR) === 'false')
-	}
-}
-
-let isHashChange = (ev) => (ev.hashChange && !ev.sourceElement) || (ev.hashChange && ev.sourceElement.matches('a[href^="#"]'))
-function direction(ev) {
-	if (ev.navigationType === 'traverse') {
-		return ev.destination.index > navigation.currentEntry.index ? 'forward' : 'back'
-	} else if (['replace', 'reload'].includes(ev.navigationType)) {
-		return 'none'
-	} else {
-		return 'forward'
-	}
-}
-
-let send = (el: Element | Document = document, type: string, detail?: any, bub?: boolean) => el.dispatchEvent(new CustomEvent("hop:" + type, { detail, cancelable: true, bubbles: bub !== false, composed: true }))
-
-async function fetchHtml(cfg: Config): Promise<Document | undefined> {
+async function fetchHTML(options): Promise<{ response: Response, doc: Document } | undefined> {
+	let response, mediaType, text
 	try {
-		if (!send(cfg.srcElement, 'before', { cfg })) return
-		let response = cfg.response = await fetch(cfg.to.href, cfg)
+		// TODO before-fetch event
+		response = await fetch(options.to.href, options)
 
-		const contentType = response.headers.get('content-type') ?? ''
-		cfg.mediaType = contentType.split(';', 1)[0].trim()
-		if (cfg.mediaType !== 'text/html' && cfg.mediaType !== 'application/xhtml+xml') return
+		if (!supportsMediaType(mediaType = response.headers.get('content-type'))) {
+			fallback(response.url)
+			return
+		}
+		if (response.redirected) {
+			const redirectedTo = new URL(response.url)
+			if (redirectedTo.origin !== options.to.origin) {
+				fallback(response.url)
+				return
+			}
+		}
 
-		cfg.text = await response.text()
-		if (!send(cfg.srcElement, 'after', {cfg})) return
-	} catch(error) {
-		send(cfg.srcElement, 'error', {cfg, error})
-		return
+		text = await response.text()
+		// TODO fetched event
+	} catch(e) {
+		// TODO fetch-errored event
+		throw e
 	} finally {
-		send(cfg.srcElement, 'finally', {cfg})
-	}
-
-	if (cfg.response.redirected) {
-		const redirectedTo = new URL(cfg.response.url)
-		if (redirectedTo.origin !== cfg.to.origin) return
-		cfg.to = redirectedTo
+		// TODO fetch-done event
 	}
 
 	parser = parser || new DOMParser()
-	let newDoc = parser.parseFromString(cfg.text, cfg.mediaType)
-	newDoc.querySelectorAll('noscript').forEach((el) => el.remove())
+	const doc = parser.parseFromString(text, mediaType)
+	doc.querySelectorAll('noscript').forEach((el) => el.remove())
 
 	// If ClientRouter is not enabled on the incoming page, do a full page load to it.
 	// Unless this was a form submission, in which case we do not want to trigger another mutation.
-	if (!enabled(newDoc) && !cfg.body) return
+	if (!enabled(doc) && !options.body) {
+		fallback(response.url)
+		return
+	}
 
-	const links = preloadStyles(newDoc)
-	links.length && !cfg.signal.aborted && (await Promise.all(links))
+	const links = preloadStyles(doc)
+	links.length && (await Promise.all(links)) // todo: signal.aborted
 
-	return newDoc
+	return { response, doc }
+}
+
+function startViewTransition(update) {
+	if (document.startViewTransition) {
+		viewTransition = document.startViewTransition(update)
+	} else {
+		update()
+	}
+	return viewTransition
+}
+
+async function swap(newDoc, ev) {
+	swapRootAttributes(newDoc)
+	swapHeadElements(newDoc)
+	withRestoredFocus(() => {
+		swapBodyElement(newDoc.body)
+	})
+	await scroll(ev)
 }
 
 function preloadStyles(newDoc: Document) {
-	let oldEls = [...document.querySelectorAll('head link[rel=stylesheet]')]
-	let newEls = [...newDoc.querySelectorAll('head link[rel=stylesheet]')]
+	const oldEls = [...document.querySelectorAll('head link[rel=stylesheet]')]
+	const newEls = [...newDoc.querySelectorAll('head link[rel=stylesheet]')]
 
 	return newEls
 		.filter(newEl => !oldEls.some(oldEl => oldEl.isEqualNode(newEl))) // todo: consider persistent stylesheets
@@ -169,24 +153,22 @@ function withRestoredFocus(callback: () => void) {
 		}
 	} else {
 		callback()
+		document.querySelector('[autofocus]')?.focus()
 	}
 }
 
 function flagNewScripts(scripts: HTMLCollectionOf<HTMLScriptElement>) {
-	for (let script of scripts) (script as any).__new = true
+	for (const script of scripts) (script as any).__new = true
 }
 
-function scroll(from, to, ev) {
-	let isRefresh = from.pathname === to.pathname && ev.navigationType === 'replace'
-	let preserveScroll = isRefresh && document.querySelector('meta[name="hop-refresh-scroll"]')?.getAttribute('content') === 'preserve'
-	if (!preserveScroll) {
-		window.scrollTo(0, 0)
-		ev.scroll()
-	}
+async function scroll(navEvent) {
+	await sendInterceptable(document, 'before-scroll')
+	navEvent.scroll()
+	send(document, 'scrolled')
 }
 
 function runScripts() {
-	let runnable = [...document.scripts].filter(
+	const runnable = [...document.scripts].filter(
 		script => (script as any).__new && script.dataset.hopEval !== 'false'
 	)
 	let wait: Promise<any> = Promise.resolve()
@@ -224,7 +206,7 @@ function runScripts() {
 }
 
 function announce() {
-	let div = document.createElement('div')
+	const div = document.createElement('div')
 	div.setAttribute('aria-live', 'assertive')
 	div.setAttribute('aria-atomic', 'true')
 	Object.assign(div.style, { position: 'absolute', left: '0', top: '0', clip: 'rect(0 0 0 0)', clipPath: 'inset(50%)', overflow: 'hidden', whiteSpace: 'nowrap', width: '1px', height: '1px' })
@@ -232,7 +214,7 @@ function announce() {
 	document.body.append(div)
 	setTimeout(
 		() => {
-			let title = document.title || document.querySelector('h1')?.textContent || location.pathname
+			const title = document.title || document.querySelector('h1')?.textContent || location.pathname
 			div.textContent = title
 		},
 		// Much thought went into this magic number; the gist is that screen readers
@@ -242,86 +224,115 @@ function announce() {
 	)
 }
 
-export async function hop(ev) {
-	let from = new URL(location.href)
-	let to = new URL(ev.destination.url)
-
-	let cfg: Config = {
-		from,
-		to,
-		direction: direction(ev),
-		navigationType: ev.navigationType,
-		signal: ev.signal
-	}
-	if (!send(cfg.srcElement, 'config', { cfg })) return
-
-	let newDoc: Document | undefined = await fetchHtml(cfg)
-	if (!newDoc) {
-		location.href = cfg.to.href
-		return
-	}
-
-	try {
-		currentTransition?.skipTransition()
-		await currentTransition?.updateCallbackDone
-	} catch {
-		// ignore
-	}
-
-	document.documentElement.setAttribute(DIRECTION_ATTR, cfg.direction)
-
-	let swapped: Promise<void> = Promise.resolve()
-	let transitioned: Promise<void> = Promise.resolve()
-	if (document.startViewTransition) {
-		currentTransition = document.startViewTransition(swap)
-		swapped = currentTransition.updateCallbackDone
-		transitioned = currentTransition.finished
-	} else {
-		swap()
-	}
-
-	swapped.finally(async () => {
-		send(document, 'swapped', { cfg })
-		scroll(from, to, ev)
-		await runScripts()
-		send(document, 'load')
-		announce()
-	})
-
-	return transitioned.finally(() => {
-		currentTransition = void 0
-		document.documentElement.removeAttribute(DIRECTION_ATTR)
-	})
-
-	function swap() {
-		if (!newDoc) return
-		swapRootAttributes(newDoc)
-		swapHeadElements(newDoc)
-		withRestoredFocus(() => {
-			swapBodyElement(newDoc.body)
-		})
-	}
-}
-
-// initialization
+// Init
 function start() {
 	if (started || !enabled() || !('navigation' in window)) return
+	resetViewTransition()
 
 	navigation.addEventListener('navigate', function (ev) {
-		let srcElement = ev.info?.srcElement || ev.sourceElement || undefined
-		if (!ev.canIntercept || ev.downloadRequest || isHashChange(ev) || !enabled(srcElement)) return
+		const sourceElement = ev.sourceElement || undefined
+		if (
+			!ev.canIntercept ||
+			ev.info?.hop === false ||
+			ev.downloadRequest ||
+			isHashChange(ev) ||
+			!enabled(sourceElement) ||
+			!send(sourceElement, 'before-intercept')
+		) return
+
+		let newDoc: Document
 
 		ev.intercept({
-			async handler() {
-				if (ev.navigationType !== 'replace' && srcElement?.closest('[data-hop-type="replace"]')) {
-					return navigation.navigate(ev.destination.url, { history: 'replace', info: {srcElement} }).finished
-				} else {
-					await hop(ev)
-				}
+			async precommitHandler(controller) {
+				let { response, doc } = (await fetchHTML({
+					to: new URL(ev.destination.url),
+					navEvent: ev
+				}) || {})
+				if (!response || !doc) return Promise.reject()
+
+				newDoc = doc
+
+				let history = ev.sourceElement?.closest('[data-hop-type="replace"]')
+					? 'replace' : ev.navigationType
+				if (response.redirected && response.location)
+					redirect(controller, response.location)
+				else if (history !== ev.navigationType)
+					redirect(controller, ev.destination.url, { history })
+				return
 			},
+
+			async handler() {
+				try {
+					viewTransition.skipTransition()
+					await viewTransition.updateCallbackDone
+				} catch { /* ignore */ }
+
+				viewTransition = startViewTransition(() => swap(newDoc, ev))
+
+				viewTransition.updateCallbackDone.finally(async () => {
+					await runScripts()
+					send(document, 'loaded')
+					announce()
+				})
+
+				viewTransition.finished.finally(() => {
+					resetViewTransition()
+				})
+
+				return viewTransition.updateCallbackDone
+			},
+			focus: 'manual',
 			scroll: 'manual'
 		})
 	})
 	started = true
 }
 addEventListener('DOMContentLoaded', start)
+
+// Utils
+const createEvent = (type: string, detail: {}) =>
+	new CustomEvent("hop:" + type, { detail, cancelable: true, bubbles: true, composed: true })
+
+const send = (el: Element | Document = document, type: string, detail = {}) =>
+	el.dispatchEvent(createEvent(type, detail))
+
+async function sendInterceptable(el: Element | Document = document, type: string, detail = {}) {
+	let ev = createEvent(type, detail)
+	let intercept = () => Promise.resolve(true)
+	ev.intercept = (callback) => intercept = callback
+	return el.dispatchEvent(ev) && await intercept()
+}
+
+const resetViewTransition = () => viewTransition = {
+	updateCallbackDone: Promise.resolve(),
+	finished: Promise.resolve(),
+	skipTransition: () => {}
+}
+
+function enabled(el: Element | Document = document) {
+	if (el instanceof Document) {
+		return el.querySelector('[name="hop"][content="true"]')
+	} else if (el instanceof Element) {
+		return !(el.closest(`[${DISABLED_ATTR}]`)
+			?.getAttribute(DISABLED_ATTR) === 'false')
+	}
+}
+
+const isHashChange = (navEvent) =>
+	(navEvent.hashChange && !navEvent.sourceElement) ||
+	(navEvent.hashChange && navEvent.sourceElement.matches('a[href^="#"]'))
+const supportsMediaType = (type) => MEDIA_TYPES.includes(type)
+
+// Fallback to an unintercepted navigation
+function fallback(to) {
+	return navigation.navigate(to, { info: { hop: false } }).finished
+}
+
+// TODO figure out handling of non-controller case
+function redirect(controller, to, options = {}) {
+	try {
+		controller.redirect(to, options)
+	} catch (e) {
+		navigation.navigate(to, { ...options, hop: { redirect: true } })
+	}
+}
