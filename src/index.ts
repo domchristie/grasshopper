@@ -241,24 +241,26 @@ function start() {
 
 		let newDoc: Document
 
+		async function precommitHandler(controller) {
+			let { response, doc } = (await fetchHTML({
+				to: new URL(ev.destination.url),
+				navEvent: ev
+			}) || {})
+			if (!response || !doc) return Promise.reject()
+
+			newDoc = doc
+
+			let history = ev.sourceElement?.closest('[data-hop-type="replace"]')
+				? 'replace' : ev.navigationType
+			if (response.redirected && response.location)
+				redirect(controller, response.location)
+			else if (history !== ev.navigationType)
+				redirect(controller, ev.destination.url, { history })
+			return
+		}
+
 		ev.intercept({
-			async precommitHandler(controller) {
-				let { response, doc } = (await fetchHTML({
-					to: new URL(ev.destination.url),
-					navEvent: ev
-				}) || {})
-				if (!response || !doc) return Promise.reject()
-
-				newDoc = doc
-
-				let history = ev.sourceElement?.closest('[data-hop-type="replace"]')
-					? 'replace' : ev.navigationType
-				if (response.redirected && response.location)
-					redirect(controller, response.location)
-				else if (history !== ev.navigationType)
-					redirect(controller, ev.destination.url, { history })
-				return
-			},
+			precommitHandler,
 
 			async handler() {
 				try {
