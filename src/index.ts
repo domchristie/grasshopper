@@ -163,6 +163,7 @@ function flagNewScripts(scripts: HTMLCollectionOf<HTMLScriptElement>) {
 
 async function scroll(navEvent) {
 	await sendInterceptable(document, 'before-scroll')
+	scrollTo(0, 0) // Fix when navigating from a scrolled page in Chrome/Safari
 	navEvent.scroll()
 	send(document, 'scrolled')
 }
