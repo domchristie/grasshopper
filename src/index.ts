@@ -51,24 +51,6 @@ async function fetchHTML(options): Promise<{ response: Response, doc: Document }
 	return { response, doc }
 }
 
-function startViewTransition(update) {
-	if (document.startViewTransition) {
-		viewTransition = document.startViewTransition(update)
-	} else {
-		update()
-	}
-	return viewTransition
-}
-
-async function swap(newDoc, ev) {
-	swapRootAttributes(newDoc)
-	swapHeadElements(newDoc)
-	withRestoredFocus(() => {
-		swapBodyElement(newDoc.body)
-	})
-	await scroll(ev)
-}
-
 function preloadStyles(newDoc: Document) {
 	const oldEls = [...document.querySelectorAll('head link[rel=stylesheet]')]
 	const newEls = [...newDoc.querySelectorAll('head link[rel=stylesheet]')]
@@ -85,6 +67,24 @@ function preloadStyles(newDoc: Document) {
 				document.head.append(link)
 			})
 		})
+}
+
+function startViewTransition(update) {
+	if (document.startViewTransition) {
+		viewTransition = document.startViewTransition(update)
+	} else {
+		update()
+	}
+	return viewTransition
+}
+
+async function swap(newDoc, ev) {
+	swapRootAttributes(newDoc)
+	swapHeadElements(newDoc)
+	withRestoredFocus(() => {
+		swapBodyElement(newDoc.body)
+	})
+	await scroll(ev)
 }
 
 function swapRootAttributes(newDoc: Document) {
@@ -106,6 +106,30 @@ function swapHeadElements(newDoc: Document) {
 	}
 	flagNewScripts(newDoc.head.getElementsByTagName('script'))
 	document.head.append(...newDoc.head.children)
+}
+
+function flagNewScripts(scripts: HTMLCollectionOf<HTMLScriptElement>) {
+	for (const script of scripts) (script as any).__new = true
+}
+
+function withRestoredFocus(callback: () => void) {
+	const activeEl = document.activeElement as HTMLElement
+	if (activeEl?.closest(`[${PERSIST_ATTR}]`)) {
+		if (activeEl instanceof HTMLInputElement || activeEl instanceof HTMLTextAreaElement) {
+			const start = activeEl.selectionStart
+			const end = activeEl.selectionEnd
+			callback()
+			activeEl.focus()
+			if (typeof start === 'number') activeEl.selectionStart = start
+			if (typeof end === 'number') activeEl.selectionEnd = end
+		} else {
+			callback()
+			activeEl.focus()
+		}
+	} else {
+		callback()
+		document.querySelector('[autofocus]')?.focus()
+	}
 }
 
 function swapBodyElement(newBody: HTMLElement) {
@@ -135,30 +159,6 @@ function attachShadowRoots(root: Element | ShadowRoot) {
 			attachShadowRoots(shadowRoot)
 		}
 	})
-}
-
-function withRestoredFocus(callback: () => void) {
-	const activeEl = document.activeElement as HTMLElement
-	if (activeEl?.closest(`[${PERSIST_ATTR}]`)) {
-		if (activeEl instanceof HTMLInputElement || activeEl instanceof HTMLTextAreaElement) {
-			const start = activeEl.selectionStart
-			const end = activeEl.selectionEnd
-			callback()
-			activeEl.focus()
-			if (typeof start === 'number') activeEl.selectionStart = start
-			if (typeof end === 'number') activeEl.selectionEnd = end
-		} else {
-			callback()
-			activeEl.focus()
-		}
-	} else {
-		callback()
-		document.querySelector('[autofocus]')?.focus()
-	}
-}
-
-function flagNewScripts(scripts: HTMLCollectionOf<HTMLScriptElement>) {
-	for (const script of scripts) (script as any).__new = true
 }
 
 async function scroll(navEvent) {
@@ -337,6 +337,7 @@ function enabled(el) {
 const isHashChange = (navEvent) =>
 	(navEvent.hashChange && !navEvent.sourceElement) ||
 	(navEvent.hashChange && navEvent.sourceElement.matches('a[href^="#"]'))
+
 const supportsMediaType = (type) => MEDIA_TYPES.includes(type)
 
 // Fallback to an unintercepted navigation
