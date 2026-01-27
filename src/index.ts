@@ -229,7 +229,7 @@ function start() {
 	if (started || !enabled() || !('navigation' in window)) return
 	resetViewTransition()
 
-	navigation.addEventListener('navigate', function (ev) {
+	navigation.addEventListener('navigate', async function (ev) {
 		if (
 			!ev.canIntercept ||
 			ev.info?.hop === false ||
@@ -239,7 +239,17 @@ function start() {
 			!send(ev.sourceElement, 'before-intercept')
 		) return
 
-		let newDoc: Document
+		let newDoc: Document = ev.info?.hop?.doc
+
+		if (!self.NavigationPrecommitController && ev.navigationType !== 'traverse') {
+			if (!newDoc) {
+				ev.preventDefault()
+				await precommitHandler(null)
+				if (newDoc)
+					navigation.navigate(ev.destination.url, { info: { hop: { doc: newDoc } } })
+				return
+			}
+		}
 
 		async function precommitHandler(controller) {
 			let { response, doc } = (await fetchHTML({
@@ -263,6 +273,10 @@ function start() {
 			precommitHandler,
 
 			async handler() {
+				if (!self.NavigationPrecommitController && ev.navigationType === 'traverse') {
+					await precommitHandler(null)
+				}
+
 				try {
 					viewTransition.skipTransition()
 					await viewTransition.updateCallbackDone
