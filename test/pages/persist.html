@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Persistence</title>
+  <script src="/grasshopper.js"></script>
+  <meta name="hop" content="true" />
+</head>
+<body>
+  <h1>Persistence Test</h1>
+  <a href="/">Back to Hub</a>
+
+  <p id="p" data-hop-persist>Persist page content</p>
+
+  <div id="player" data-hop-persist>
+    <p>Simulated media player (this element persists)</p>
+    <input type="text" value="type here" />
+  </div>
+
+  <div id="counter" data-hop-persist>
+    <p>Counter: <span id="count">0</span></p>
+    <script>
+      if (!window._counterInit) {
+        window._counterInit = true
+        let count = 0
+        setInterval(() => {
+          const el = document.getElementById('count')
+          if (el) el.textContent = ++count
+        }, 1000)
+      }
+    </script>
+  </div>
+</body>
+</html>

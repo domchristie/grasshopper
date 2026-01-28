@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Test Hub</title>
+  <script src="/grasshopper.js"></script>
+  <meta name="hop" content="true" />
+</head>
+<body>
+  <h1>Grasshopper Test Hub</h1>
+
+  <h2>Basic Navigation</h2>
+  <ul>
+    <li><a href="/pages/two.html">Push to Two</a></li>
+    <li><a href="/pages/two.html" data-hop-type="replace">Replace to Two</a></li>
+    <li><a href="/" data-hop-type="replace">Replace to Self</a></li>
+  </ul>
+
+  <h2>Persistence</h2>
+  <ul>
+    <li><a href="/pages/persist.html">Persist test</a></li>
+  </ul>
+
+  <h2>Fragments</h2>
+  <ul>
+    <li><a href="#local-fragment">Local fragment</a></li>
+    <li><a href="/pages/fragment.html#target">Fragment on another page</a></li>
+  </ul>
+
+  <h2>Forms</h2>
+  <ul>
+    <li><a href="/pages/form-get.html">Form GET</a></li>
+    <li><a href="/pages/form-post.html">Form POST</a></li>
+  </ul>
+
+  <h2>Disabled</h2>
+  <ul>
+    <li><a href="/pages/two.html" data-hop="false">Disabled link (data-hop="false")</a></li>
+    <li><a href="/pages/disabled.html">Page with disabled links</a></li>
+    <li><a href="/pages/no-hop.html">Page without hop meta tag</a></li>
+  </ul>
+
+  <h2>Redirects</h2>
+  <ul>
+    <li><a href="/redirect/301">301 same-origin</a></li>
+    <li><a href="/redirect/302">302 same-origin</a></li>
+    <li><a href="/redirect/external">External redirect (cross-origin)</a></li>
+  </ul>
+
+  <h2>Slow / Abort</h2>
+  <ul>
+    <li><a href="/slow?delay=500">500ms</a></li>
+    <li><a href="/slow">3s (default)</a></li>
+    <li><a href="/slow?delay=10000">10s (for abort testing)</a></li>
+  </ul>
+
+  <h2>Unsupported Content</h2>
+  <ul>
+    <li><a href="/unsupported">JSON response</a></li>
+  </ul>
+
+  <p id="p" data-hop-persist>Hub persistent element</p>
+  <p id="local-fragment" style="margin-top: 100vh">Local fragment target</p>
+</body>
+</html>
