@@ -4,10 +4,13 @@ const PERSIST_ATTR = 'data-hop-persist'
 const DISABLED_ATTR = 'data-hop'
 
 let started = false
-let parser: DOMParser
+let parser
 let viewTransition
 
-async function fetchHTML(options): Promise<{ response: Response, doc: Document } | undefined> {
+async function fetchHTML(options) {
+	options.method = options.navEvent.formData ? 'POST' : 'GET'
+	options.body = options.navEvent.formData
+
 	let response, mediaType, text
 	try {
 		// TODO before-fetch event
@@ -51,7 +54,7 @@ async function fetchHTML(options): Promise<{ response: Response, doc: Document }
 	return { response, doc }
 }
 
-function preloadStyles(newDoc: Document) {
+function preloadStyles(newDoc) {
 	const oldEls = [...document.querySelectorAll('head link[rel=stylesheet]')]
 	const newEls = [...newDoc.querySelectorAll('head link[rel=stylesheet]')]
 
@@ -61,7 +64,7 @@ function preloadStyles(newDoc: Document) {
 			let link = document.createElement('link')
 			link.setAttribute('rel', 'preload')
 			link.setAttribute('as', 'style')
-			link.setAttribute('href', el.getAttribute('href')!)
+			link.setAttribute('href', el.getAttribute('href'))
 			return new Promise((resolve) => {
 				['load', 'error'].forEach((ev) => link.addEventListener(ev, resolve))
 				document.head.append(link)
@@ -87,7 +90,7 @@ async function swap(newDoc, ev) {
 	await scroll(ev)
 }
 
-function swapRootAttributes(newDoc: Document) {
+function swapRootAttributes(newDoc) {
 	const currentRoot = document.documentElement
 	const persistedAttrs = [...currentRoot.attributes].filter(
 		({ name }) => (currentRoot.removeAttribute(name), [DIRECTION_ATTR].includes(name))
@@ -96,7 +99,7 @@ function swapRootAttributes(newDoc: Document) {
 	attrs.forEach(({ name, value }) => currentRoot.setAttribute(name, value))
 }
 
-function swapHeadElements(newDoc: Document) {
+function swapHeadElements(newDoc) {
 	const oldEls = [...document.head.children]
 	const newEls = [...newDoc.head.children]
 
@@ -108,12 +111,12 @@ function swapHeadElements(newDoc: Document) {
 	document.head.append(...newDoc.head.children)
 }
 
-function flagNewScripts(scripts: HTMLCollectionOf<HTMLScriptElement>) {
-	for (const script of scripts) (script as any).__new = true
+function flagNewScripts(scripts) {
+	for (const script of scripts) script.__new = true
 }
 
-function withRestoredFocus(callback: () => void) {
-	const activeEl = document.activeElement as HTMLElement
+function withRestoredFocus(callback) {
+	const activeEl = document.activeElement
 	if (activeEl?.closest(`[${PERSIST_ATTR}]`)) {
 		if (activeEl instanceof HTMLInputElement || activeEl instanceof HTMLTextAreaElement) {
 			const start = activeEl.selectionStart
@@ -132,7 +135,7 @@ function withRestoredFocus(callback: () => void) {
 	}
 }
 
-function swapBodyElement(newBody: HTMLElement) {
+function swapBodyElement(newBody) {
 	const oldBody = document.body
 	oldBody.replaceWith(newBody) // resets scroll position
 
@@ -143,8 +146,8 @@ function swapBodyElement(newBody: HTMLElement) {
 	attachShadowRoots(newBody)
 }
 
-function attachShadowRoots(root: Element | ShadowRoot) {
-	root.querySelectorAll<HTMLTemplateElement>('template[shadowrootmode]').forEach((template) => {
+function attachShadowRoots(root) {
+	root.querySelectorAll('template[shadowrootmode]').forEach((template) => {
 		const mode = template.getAttribute('shadowrootmode')
 		const parent = template.parentNode
 		if ((mode === 'closed' || mode === 'open') && parent instanceof HTMLElement) {
@@ -170,9 +173,9 @@ async function scroll(navEvent) {
 
 function runScripts() {
 	const runnable = [...document.scripts].filter(
-		script => (script as any).__new && script.dataset.hopEval !== 'false'
+		script => (script).__new && script.dataset.hopEval !== 'false'
 	)
-	let wait: Promise<any> = Promise.resolve()
+	let wait = Promise.resolve()
 	let needsWaitForInlineModuleScript = false
 	// Inline module scripts are deferred but still executed in order.
 	// They can not be awaited for with onload.
@@ -240,7 +243,7 @@ function start() {
 			!send(ev.sourceElement, 'before-intercept')
 		) return
 
-		let newDoc: Document = ev.info?.hop?.doc
+		let newDoc = ev.info?.hop?.doc
 
 		if (!self.NavigationPrecommitController && ev.navigationType !== 'traverse') {
 			if (!newDoc) {
@@ -274,9 +277,8 @@ function start() {
 			precommitHandler,
 
 			async handler() {
-				if (!self.NavigationPrecommitController && ev.navigationType === 'traverse') {
+				if (!self.NavigationPrecommitController && ev.navigationType === 'traverse')
 					await precommitHandler(null)
-				}
 
 				try {
 					viewTransition.skipTransition()
@@ -306,7 +308,7 @@ function start() {
 addEventListener('DOMContentLoaded', start)
 
 // Utils
-const createEvent = (type: string, detail: {}) =>
+const createEvent = (type, detail) =>
 	new CustomEvent("hop:" + type, { detail, cancelable: true, bubbles: true, composed: true })
 
 const send = (el, type, detail = {}) =>
