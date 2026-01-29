@@ -33,6 +33,8 @@ function start() {
 		async function precommitHandler(controller) {
 			let { response, doc } = (await fetchHTML({
 				to: new URL(ev.destination.url),
+				method: ev.formData ? 'POST' : 'GET',
+				body: ev.formData,
 				navEvent: ev
 			}) || {})
 			if (!response || !doc) return Promise.reject()
@@ -87,9 +89,6 @@ function start() {
 addEventListener('DOMContentLoaded', start)
 
 async function fetchHTML(options) {
-	options.method = options.navEvent.formData ? 'POST' : 'GET'
-	options.body = options.navEvent.formData
-
 	let response, mediaType, text
 	try {
 		// TODO before-fetch event
