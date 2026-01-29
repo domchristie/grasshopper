@@ -2,10 +2,89 @@ const MEDIA_TYPES = ['text/html', 'application/xhtml+xml']
 const DIRECTION_ATTR = 'data-hop-direction'
 const PERSIST_ATTR = 'data-hop-persist'
 const DISABLED_ATTR = 'data-hop'
+const nativePrecommit = !!self.NavigationPrecommitController
 
 let started = false
 let parser
 let viewTransition
+
+function start() {
+	if (started || !enabled() || !('navigation' in window)) return
+	resetViewTransition()
+
+	navigation.addEventListener('navigate', async function (ev) {
+		if (
+			!ev.canIntercept ||
+			ev.info?.hop === false ||
+			ev.downloadRequest ||
+			isHashChange(ev) ||
+			!enabled(ev.sourceElement) ||
+			!send(ev.sourceElement, 'before-intercept')
+		) return
+
+		let newDoc = ev.info?.hop?.doc
+
+		if (!nativePrecommit && !newDoc && ev.navigationType !== 'traverse') {
+			ev.preventDefault()
+			await precommitHandler(null)
+			return
+		}
+
+		async function precommitHandler(controller) {
+			let { response, doc } = (await fetchHTML({
+				to: new URL(ev.destination.url),
+				navEvent: ev
+			}) || {})
+			if (!response || !doc) return Promise.reject('blarg')
+
+			newDoc = doc
+
+			let history = ev.sourceElement?.closest('[data-hop-type="replace"]')
+				? 'replace' : ev.navigationType
+			if (
+				(!nativePrecommit && ev.navigationType !== 'traverse') ||
+				(response.redirected && response.url) ||
+				history !== ev.navigationType
+			)
+				return redirect(controller,
+					(response.redirected && response.url) || ev.destination.url, {
+					history, info: { ...ev.info, hop: { doc } }
+				})
+		}
+
+		ev.intercept({
+			precommitHandler,
+
+			async handler() {
+				if (!nativePrecommit && ev.navigationType === 'traverse')
+					await precommitHandler(null)
+
+				try {
+					viewTransition.skipTransition()
+					await viewTransition.updateCallbackDone
+				} catch { /* ignore */ }
+
+				viewTransition = startViewTransition(() => swap(newDoc, ev))
+
+				viewTransition.updateCallbackDone.finally(async () => {
+					await runScripts()
+					send(document, 'loaded')
+					announce()
+				})
+
+				viewTransition.finished.finally(() => {
+					resetViewTransition()
+				})
+
+				return viewTransition.updateCallbackDone
+			},
+			focus: 'manual',
+			scroll: 'manual'
+		})
+	})
+	started = true
+}
+addEventListener('DOMContentLoaded', start)
 
 async function fetchHTML(options) {
 	options.method = options.navEvent.formData ? 'POST' : 'GET'
@@ -227,85 +306,6 @@ function announce() {
 		60
 	)
 }
-
-// Init
-function start() {
-	if (started || !enabled() || !('navigation' in window)) return
-	resetViewTransition()
-
-	navigation.addEventListener('navigate', async function (ev) {
-		if (
-			!ev.canIntercept ||
-			ev.info?.hop === false ||
-			ev.downloadRequest ||
-			isHashChange(ev) ||
-			!enabled(ev.sourceElement) ||
-			!send(ev.sourceElement, 'before-intercept')
-		) return
-
-		let newDoc = ev.info?.hop?.doc
-
-		if (!self.NavigationPrecommitController && ev.navigationType !== 'traverse') {
-			if (!newDoc) {
-				ev.preventDefault()
-				await precommitHandler(null)
-				if (newDoc)
-					navigation.navigate(ev.destination.url, { info: { hop: { doc: newDoc } } })
-				return
-			}
-		}
-
-		async function precommitHandler(controller) {
-			let { response, doc } = (await fetchHTML({
-				to: new URL(ev.destination.url),
-				navEvent: ev
-			}) || {})
-			if (!response || !doc) return Promise.reject()
-
-			newDoc = doc
-
-			let history = ev.sourceElement?.closest('[data-hop-type="replace"]')
-				? 'replace' : ev.navigationType
-			if (response.redirected && response.location)
-				redirect(controller, response.location)
-			else if (history !== ev.navigationType)
-				redirect(controller, ev.destination.url, { history })
-			return
-		}
-
-		ev.intercept({
-			precommitHandler,
-
-			async handler() {
-				if (!self.NavigationPrecommitController && ev.navigationType === 'traverse')
-					await precommitHandler(null)
-
-				try {
-					viewTransition.skipTransition()
-					await viewTransition.updateCallbackDone
-				} catch { /* ignore */ }
-
-				viewTransition = startViewTransition(() => swap(newDoc, ev))
-
-				viewTransition.updateCallbackDone.finally(async () => {
-					await runScripts()
-					send(document, 'loaded')
-					announce()
-				})
-
-				viewTransition.finished.finally(() => {
-					resetViewTransition()
-				})
-
-				return viewTransition.updateCallbackDone
-			},
-			focus: 'manual',
-			scroll: 'manual'
-		})
-	})
-	started = true
-}
-addEventListener('DOMContentLoaded', start)
 
 // Utils
 const createEvent = (type, detail) =>
