@@ -35,7 +35,7 @@ function start() {
 				to: new URL(ev.destination.url),
 				navEvent: ev
 			}) || {})
-			if (!response || !doc) return Promise.reject('blarg')
+			if (!response || !doc) return Promise.reject()
 
 			newDoc = doc
 
