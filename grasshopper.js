@@ -299,10 +299,7 @@ function announce() {
 			const title = document.title || document.querySelector('h1')?.textContent || location.pathname
 			div.textContent = title
 		},
-		// Much thought went into this magic number; the gist is that screen readers
-		// need to see that the element changed and might not do so if it happens
-		// too quickly.
-		60
+		60 // Delay to ensure screen readers notice the change
 	)
 }
 
