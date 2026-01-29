@@ -332,7 +332,7 @@ function enabled(el) {
 		return !(el.closest(`[${DISABLED_ATTR}]`)
 			?.getAttribute(DISABLED_ATTR) === 'false')
 	} else {
-		return document.querySelector('[name="hop"][content="true"]')
+		return (el || document).querySelector('[name="hop"][content="true"]')
 	}
 }
 
