@@ -348,6 +348,6 @@ function redirect(controller, to, options = {}) {
 	try {
 		controller.redirect(to, options)
 	} catch (e) {
-		navigation.navigate(to, { ...options, hop: { redirect: true } })
+		navigation.navigate(to, options)
 	}
 }
