@@ -113,12 +113,21 @@ test.describe('Forms', () => {
   })
 })
 
-test.describe('Disabled (fallback)', () => {
+test.describe('Fallback', () => {
   test('data-hop="false" link loads new document', async ({ page }) => {
     await page.goto('/')
     const docId = await markDocument(page)
     await page.click('a[data-hop="false"]')
     await expect(page).toHaveTitle('Two')
+    expect(await getDocumentId(page)).not.toBe(docId)
+  })
+
+  test('unsupported content type triggers fallback', async ({ page }) => {
+    await page.goto('/')
+    const docId = await markDocument(page)
+    await page.click('a[href="/unsupported"]')
+    // JSON response triggers fallback - browser shows raw JSON
+    await page.waitForURL('/unsupported')
     expect(await getDocumentId(page)).not.toBe(docId)
   })
 })
