@@ -6,6 +6,7 @@ const nativePrecommit = !!self.NavigationPrecommitController
 
 let started = false
 let parser
+let abortController
 let viewTransition
 
 function start() {
@@ -13,6 +14,8 @@ function start() {
 	resetViewTransition()
 
 	navigation.addEventListener('navigate', async function (ev) {
+		abortController?.abort()
+
 		if (
 			!ev.canIntercept ||
 			ev.info?.hop === false ||
@@ -24,10 +27,14 @@ function start() {
 
 		let newDoc = ev.info?.hop?.doc
 
-		if (!nativePrecommit && !newDoc && ev.navigationType !== 'traverse') {
-			ev.preventDefault()
-			await precommitHandler(null)
-			return
+		if (!nativePrecommit && ev.navigationType !== 'traverse') {
+			abortController = null
+			if (!newDoc) {
+				ev.preventDefault()
+				abortController = new AbortController()
+				await precommitHandler(null)
+				return
+			}
 		}
 
 		async function precommitHandler(controller) {
@@ -35,6 +42,7 @@ function start() {
 				to: new URL(ev.destination.url),
 				method: ev.formData ? 'POST' : 'GET',
 				body: ev.formData,
+				signal: abortController === null ? null : (abortController || ev).signal,
 				navEvent: ev
 			}) || {})
 			if (!response || !doc) return Promise.reject()
