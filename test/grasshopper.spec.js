@@ -2,10 +2,10 @@ import { test, expect } from '@playwright/test'
 
 // Helper to mark the document and check if it survived navigation
 async function markDocument(page) {
-  return await page.evaluate(() => (document as any).__testId = Math.random())
+  return await page.evaluate(() => document.__testId = Math.random())
 }
 async function getDocumentId(page) {
-  return await page.evaluate(() => (document as any).__testId)
+  return await page.evaluate(() => document.__testId)
 }
 
 test.describe('Basic Navigation', () => {

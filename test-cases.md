@@ -1,0 +1,11 @@
+- Index to One (push)
+- One to Index (traverse back)
+- Index to One (traverse forward)
+- Index to One (replace)
+- Index to Index (replace)
+
+- Index to External
+- Index to Disabled
+- Index to Unsupported
+- Index to ExternalRedirect
+- Index to Slow (aborted)
