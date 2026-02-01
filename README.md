@@ -27,6 +27,9 @@ When present, the scroll position will be maintained during a page navigation if
 ```
 This bypasses the fetch-based navigation and instead uses the default browser behaviour.
 
-## TODO
-
-- [ ] Implement `data-hop-track="reload"`
+**Trackable Elements**
+```html
+<link rel="stylesheet" href="/styles.css?v=123" data-hop-track="reload">
+<script src="/app.js?v=456" data-hop-track="reload"></script>
+```
+Elements with `data-hop-track="reload"` are compared between the current and new document during navigation. If any tracked element in the current document is not present (or has changed) in the new document, a full page reload is triggered instead of a soft navigation. Useful for cache-busted assets where a version change should force a fresh load.

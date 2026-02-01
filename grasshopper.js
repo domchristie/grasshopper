@@ -2,6 +2,7 @@ const MEDIA_TYPES = ['text/html', 'application/xhtml+xml']
 const DIRECTION_ATTR = 'data-hop-direction'
 const PERSIST_ATTR = 'data-hop-persist'
 const DISABLED_ATTR = 'data-hop'
+const TRACK_ATTR = 'data-hop-track'
 const nativePrecommit = !!self.NavigationPrecommitController
 
 let started = false
@@ -25,11 +26,12 @@ function start() {
 			!send(ev.sourceElement, 'before-intercept')
 		) return
 
-		let newDoc = ev.info?.hop?.doc
+		let response
+		let doc = ev.info?.hop?.doc
 
 		if (!nativePrecommit && ev.navigationType !== 'traverse') {
 			abortController = null
-			if (!newDoc) {
+			if (!doc) {
 				ev.preventDefault()
 				abortController = new AbortController()
 				await precommitHandler(null)
@@ -38,7 +40,7 @@ function start() {
 		}
 
 		async function precommitHandler(controller) {
-			let { response, doc } = (await fetchHTML({
+			;({ response, doc } = await fetchHTML({
 				to: new URL(ev.destination.url),
 				method: ev.formData ? 'POST' : 'GET',
 				body: ev.formData,
@@ -46,8 +48,6 @@ function start() {
 				navEvent: ev
 			}) || {})
 			if (!response || !doc) return Promise.reject()
-
-			newDoc = doc
 
 			let history = ev.sourceElement?.closest('[data-hop-type="replace"]')
 				? 'replace' : ev.navigationType
@@ -74,7 +74,10 @@ function start() {
 					await viewTransition.updateCallbackDone
 				} catch { /* ignore */ }
 
-				viewTransition = startViewTransition(() => swap(newDoc, ev))
+				if ((!ev.formData || response?.redirected) && trackedElementsChanged(doc))
+					return fallback(ev.destination.url)
+
+				viewTransition = startViewTransition(() => swap(doc, ev))
 
 				viewTransition.updateCallbackDone.finally(async () => {
 					await runScripts()
@@ -140,9 +143,9 @@ async function fetchHTML(options) {
 	return { response, doc }
 }
 
-function preloadStyles(newDoc) {
+function preloadStyles(doc) {
 	const oldEls = [...document.querySelectorAll('head link[rel=stylesheet]')]
-	const newEls = [...newDoc.querySelectorAll('head link[rel=stylesheet]')]
+	const newEls = [...doc.querySelectorAll('head link[rel=stylesheet]')]
 
 	return newEls
 		.filter(newEl => !oldEls.some(oldEl => oldEl.isEqualNode(newEl))) // todo: consider persistent stylesheets
@@ -167,34 +170,34 @@ function startViewTransition(update) {
 	return viewTransition
 }
 
-async function swap(newDoc, ev) {
-	swapRootAttributes(newDoc)
-	swapHeadElements(newDoc)
+async function swap(doc, ev) {
+	swapRootAttributes(doc)
+	swapHeadElements(doc)
 	withRestoredFocus(() => {
-		swapBodyElement(newDoc.body)
+		swapBodyElement(doc.body)
 	})
 	await scroll(ev)
 }
 
-function swapRootAttributes(newDoc) {
+function swapRootAttributes(doc) {
 	const currentRoot = document.documentElement
 	const persistedAttrs = [...currentRoot.attributes].filter(
 		({ name }) => (currentRoot.removeAttribute(name), [DIRECTION_ATTR].includes(name))
 	)
-	const attrs = [...newDoc.documentElement.attributes, ...persistedAttrs]
+	const attrs = [...doc.documentElement.attributes, ...persistedAttrs]
 	attrs.forEach(({ name, value }) => currentRoot.setAttribute(name, value))
 }
 
-function swapHeadElements(newDoc) {
+function swapHeadElements(doc) {
 	const oldEls = [...document.head.children]
-	const newEls = [...newDoc.head.children]
+	const newEls = [...doc.head.children]
 
 	for (const oldEl of oldEls) {
 		const newEl = newEls.find(newEl => newEl.isEqualNode(oldEl))
 		newEl ? newEl.remove() : oldEl.remove() // todo: track element reloads
 	}
-	flagNewScripts(newDoc.head.getElementsByTagName('script'))
-	document.head.append(...newDoc.head.children)
+	flagNewScripts(doc.head.getElementsByTagName('script'))
+	document.head.append(...doc.head.children)
 }
 
 function flagNewScripts(scripts) {
@@ -346,6 +349,17 @@ const isHashChange = (navEvent) =>
 	(navEvent.hashChange && navEvent.sourceElement.matches('a[href^="#"]'))
 
 const supportsMediaType = (type) => MEDIA_TYPES.includes(type)
+
+function trackedElementsChanged(doc) {
+	const oldEls = [...document.querySelectorAll(`[${TRACK_ATTR}="reload"]`)]
+	const newEls = [...doc.querySelectorAll(`[${TRACK_ATTR}="reload"]`)]
+
+	for (const oldEl of oldEls) {
+		const found = newEls.some(newEl => newEl.isEqualNode(oldEl))
+		if (!found) return true
+	}
+	return false
+}
 
 // Fallback to an unintercepted navigation
 function fallback(to) {

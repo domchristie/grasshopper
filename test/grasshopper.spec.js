@@ -151,6 +151,41 @@ test.describe('Redirects', () => {
 	})
 })
 
+test.describe('Trackable Elements', () => {
+	test('same tracked element keeps same document', async ({ page }) => {
+		await page.goto('/pages/track.html')
+		const docId = await markDocument(page)
+		await page.click('a[href="/pages/track-same.html"]')
+		await expect(page).toHaveTitle('Track Same')
+		expect(await getDocumentId(page)).toBe(docId)
+	})
+
+	test('changed tracked element reloads document', async ({ page }) => {
+		await page.goto('/pages/track.html')
+		const docId = await markDocument(page)
+		await page.click('a[href="/pages/track-changed.html"]')
+		await expect(page).toHaveTitle('Track Changed')
+		expect(await getDocumentId(page)).not.toBe(docId)
+	})
+
+	test('changed tracked element on POST avoids reloading', async ({ page }) => {
+		await page.goto('/pages/track-form.html')
+		const docId = await markDocument(page)
+		await page.click('input[type="submit"]')
+		await page.waitForURL('/track-form')
+		await expect(page).toHaveTitle('Track Form Result')
+		expect(await getDocumentId(page)).toBe(docId)
+	})
+
+	test('changed tracked element on redirected POST reloads document', async ({ page }) => {
+		await page.goto('/pages/track-form-redirect.html')
+		const docId = await markDocument(page)
+		await page.click('input[type="submit"]')
+		await expect(page).toHaveTitle('Track Changed')
+		expect(await getDocumentId(page)).not.toBe(docId)
+	})
+})
+
 test.describe('Slow responses', () => {
 	test('slow response keeps same document', async ({ page }) => {
 		await page.goto('/')

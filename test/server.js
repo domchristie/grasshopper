@@ -87,6 +87,22 @@ const server = createServer(async (req, res) => {
       return res.end(formResultHTML(req.method, params))
     }
 
+    // Track form handler (POST with changed tracked element)
+    if (pathname === '/track-form' && req.method === 'POST') {
+      await collectBody(req)
+      log(req, 200, 'track-form', 'POST')
+      res.writeHead(200, { 'Content-Type': 'text/html' })
+      return res.end(trackFormResultHTML())
+    }
+
+    // Track form redirect handler (POST that redirects to page with changed tracked element)
+    if (pathname === '/track-form-redirect' && req.method === 'POST') {
+      await collectBody(req)
+      log(req, 302, 'track-form-redirect', '/pages/track-changed.html')
+      res.writeHead(302, { Location: '/pages/track-changed.html' })
+      return res.end()
+    }
+
     // Unsupported content type
     if (pathname === '/unsupported') {
       log(req, 200, 'json', 'application/json')
@@ -193,6 +209,26 @@ function slowHTML(delay) {
   <nav>
     <a href="/">Hub</a>
     <a href="/slow?delay=${delay}">Reload (same delay)</a>
+  </nav>
+</body>
+</html>`
+}
+
+function trackFormResultHTML() {
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <title>Track Form Result</title>
+  <script src="/grasshopper.js"></script>
+  <meta name="hop" content="true" />
+  <link rel="stylesheet" href="/styles.css?v=2" data-hop-track="reload">
+</head>
+<body>
+  <h1>Track Form Result</h1>
+  <p>This page has a different tracked stylesheet (v=2).</p>
+  <nav>
+    <a href="/">Hub</a>
+    <a href="/pages/track-form.html">Back</a>
   </nav>
 </body>
 </html>`
