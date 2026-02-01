@@ -10,34 +10,37 @@
 
 	<h2>Basic Navigation</h2>
 	<ul>
-		<li><a href="/pages/two.html">Push to Two</a></li>
-		<li><a href="/pages/two.html" data-hop-type="replace">Replace to Two</a></li>
+		<li><a href="/fixtures/two.html">Push to Two</a></li>
+		<li><a href="/fixtures/two.html" data-hop-type="replace">Replace to Two</a></li>
 		<li><a href="/" data-hop-type="replace">Replace to Self</a></li>
+		<li><a href="/" data-hop-type="reload">Reload to Self</a></li>
 	</ul>
 
 	<h2>Persistence</h2>
 	<ul>
-		<li><a href="/pages/persist.html">Persist test</a></li>
+		<li><a href="/fixtures/persist.html">Persist test</a></li>
 	</ul>
+	<p id="p" data-hop-persist>Hub persistent element</p>
+	<audio src="/test.mp3" controls id="audio" data-hop-persist></audio>
 
 	<h2>Fragments</h2>
 	<ul>
 		<li><a href="#local-fragment">Local fragment</a></li>
-		<li><a href="/pages/fragment.html#target">Fragment on another page</a></li>
-		<li><a href="/pages/fragment.html">Fragment page with no fragment</a></li>
+		<li><a href="/fixtures/fragment.html#target">Fragment on another page</a></li>
+		<li><a href="/fixtures/fragment.html">Fragment page with no fragment</a></li>
 	</ul>
 
 	<h2>Forms</h2>
 	<ul>
-		<li><a href="/pages/form-get.html">Form GET</a></li>
-		<li><a href="/pages/form-post.html">Form POST</a></li>
+		<li><a href="/fixtures/form-get.html">Form GET</a></li>
+		<li><a href="/fixtures/form-post.html">Form POST</a></li>
 	</ul>
 
 	<h2>Disabled</h2>
 	<ul>
-		<li><a href="/pages/two.html" data-hop="false">Disabled link (data-hop="false")</a></li>
-		<li><a href="/pages/disabled.html">Page with disabled links</a></li>
-		<li><a href="/pages/no-hop.html">Page without hop meta tag</a></li>
+		<li><a href="/fixtures/two.html" data-hop="false">Disabled link (data-hop="false")</a></li>
+		<li><a href="/fixtures/disabled.html">Page with disabled links</a></li>
+		<li><a href="/fixtures/no-hop.html">Page without hop meta tag</a></li>
 	</ul>
 
 	<h2>Redirects</h2>
@@ -58,7 +61,7 @@
 
 	<h2>Trackable Elements</h2>
 	<ul>
-		<li><a href="/pages/track.html">Track test page</a></li>
+		<li><a href="/fixtures/track.html">Track test page</a></li>
 	</ul>
 
 	<h2>Unsupported Content</h2>
@@ -66,7 +69,6 @@
 		<li><a href="/unsupported">JSON response</a></li>
 	</ul>
 
-	<p id="p" data-hop-persist>Hub persistent element</p>
 	<p id="local-fragment" style="margin-top: 100vh">Local fragment target</p>
 </body>
 </html>

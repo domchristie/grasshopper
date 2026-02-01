@@ -12,7 +12,7 @@ test.describe('Basic Navigation', () => {
 	test('push navigation keeps same document', async ({ page }) => {
 		await page.goto('/')
 		const docId = await markDocument(page)
-		await page.click('a[href="/pages/two.html"]')
+		await page.click('a[href="/fixtures/two.html"]')
 		await expect(page).toHaveTitle('Two')
 		expect(await getDocumentId(page)).toBe(docId)
 	})
@@ -21,7 +21,7 @@ test.describe('Basic Navigation', () => {
 		await page.goto('/')
 		const docId = await markDocument(page)
 		const entriesBefore = await page.evaluate(() => navigation.entries().length)
-		await page.click('a[href="/pages/two.html"][data-hop-type="replace"]')
+		await page.click('a[href="/fixtures/two.html"][data-hop-type="replace"]')
 		await expect(page).toHaveTitle('Two')
 		expect(await getDocumentId(page)).toBe(docId)
 		const entriesAfter = await page.evaluate(() => navigation.entries().length)
@@ -42,7 +42,7 @@ test.describe('Basic Navigation', () => {
 	test('back button traverses history', async ({ page }) => {
 		await page.goto('/')
 		const docId = await markDocument(page)
-		await page.click('a[href="/pages/two.html"]')
+		await page.click('a[href="/fixtures/two.html"]')
 		await expect(page).toHaveTitle('Two')
 		await page.goBack()
 		await expect(page).toHaveTitle('Test Hub')
@@ -52,7 +52,7 @@ test.describe('Basic Navigation', () => {
 	test('forward button traverses history', async ({ page }) => {
 		await page.goto('/')
 		const docId = await markDocument(page)
-		await page.click('a[href="/pages/two.html"]')
+		await page.click('a[href="/fixtures/two.html"]')
 		await expect(page).toHaveTitle('Two')
 		await page.goBack()
 		await expect(page).toHaveTitle('Test Hub')
@@ -66,7 +66,7 @@ test.describe('Persistence', () => {
 	test('data-hop-persist element survives navigation', async ({ page }) => {
 		await page.goto('/')
 		const docId = await markDocument(page)
-		await page.click('a[href="/pages/two.html"]')
+		await page.click('a[href="/fixtures/two.html"]')
 		await expect(page).toHaveTitle('Two')
 		expect(await getDocumentId(page)).toBe(docId)
 		await expect(page.locator('#p')).toHaveText('Hub persistent element')
@@ -88,7 +88,7 @@ test.describe('Fragments', () => {
 	test('fragment on another page keeps same document', async ({ page }) => {
 		await page.goto('/')
 		const docId = await markDocument(page)
-		await page.click('a[href="/pages/fragment.html#target"]')
+		await page.click('a[href="/fixtures/fragment.html#target"]')
 		await expect(page).toHaveURL(/fragment\.html#target/)
 		await expect(page).toHaveTitle('Fragments')
 		expect(await getDocumentId(page)).toBe(docId)
@@ -97,7 +97,7 @@ test.describe('Fragments', () => {
 
 test.describe('Forms', () => {
 	test('form GET keeps same document', async ({ page }) => {
-		await page.goto('/pages/form-get.html')
+		await page.goto('/fixtures/form-get.html')
 		const docId = await markDocument(page)
 		await page.click('input[type="submit"]')
 		await expect(page.locator('h1')).toHaveText('Form GET Result')
@@ -105,7 +105,7 @@ test.describe('Forms', () => {
 	})
 
 	test('form POST keeps same document', async ({ page }) => {
-		await page.goto('/pages/form-post.html')
+		await page.goto('/fixtures/form-post.html')
 		const docId = await markDocument(page)
 		await page.click('input[type="submit"]')
 		await expect(page.locator('h1')).toHaveText('Form POST Result')
@@ -153,23 +153,23 @@ test.describe('Redirects', () => {
 
 test.describe('Trackable Elements', () => {
 	test('same tracked element keeps same document', async ({ page }) => {
-		await page.goto('/pages/track.html')
+		await page.goto('/fixtures/track.html')
 		const docId = await markDocument(page)
-		await page.click('a[href="/pages/track-same.html"]')
+		await page.click('a[href="/fixtures/track-same.html"]')
 		await expect(page).toHaveTitle('Track Same')
 		expect(await getDocumentId(page)).toBe(docId)
 	})
 
 	test('changed tracked element reloads document', async ({ page }) => {
-		await page.goto('/pages/track.html')
+		await page.goto('/fixtures/track.html')
 		const docId = await markDocument(page)
-		await page.click('a[href="/pages/track-changed.html"]')
+		await page.click('a[href="/fixtures/track-changed.html"]')
 		await expect(page).toHaveTitle('Track Changed')
 		expect(await getDocumentId(page)).not.toBe(docId)
 	})
 
 	test('changed tracked element on POST avoids reloading', async ({ page }) => {
-		await page.goto('/pages/track-form.html')
+		await page.goto('/fixtures/track-form.html')
 		const docId = await markDocument(page)
 		await page.click('input[type="submit"]')
 		await page.waitForURL('/track-form')
@@ -178,7 +178,7 @@ test.describe('Trackable Elements', () => {
 	})
 
 	test('changed tracked element on redirected POST reloads document', async ({ page }) => {
-		await page.goto('/pages/track-form-redirect.html')
+		await page.goto('/fixtures/track-form-redirect.html')
 		const docId = await markDocument(page)
 		await page.click('input[type="submit"]')
 		await expect(page).toHaveTitle('Track Changed')

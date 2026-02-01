@@ -11,6 +11,7 @@ const MIME = {
   '.js': 'application/javascript',
   '.css': 'text/css',
   '.json': 'application/json',
+  '.mp3': 'audio/mpeg',
 }
 
 const server = createServer(async (req, res) => {
@@ -26,30 +27,36 @@ const server = createServer(async (req, res) => {
 
     // Root -> hub
     if (pathname === '/') {
-      log(req, 200, 'file', 'pages/index.html')
-      return serveFile(res, join(ROOT, 'pages', 'index.html'))
+      log(req, 200, 'file', 'fixtures/index.html')
+      return serveFile(res, join(ROOT, 'fixtures', 'index.html'))
     }
 
-    // Static files under /pages/
-    if (pathname.startsWith('/pages/')) {
-      const rel = pathname.slice('/pages/'.length)
+    // MP3 file
+    if (pathname === '/test.mp3') {
+      log(req, 200, 'file', 'fixtures/test_seq-3341-7.mp3')
+      return serveFile(res, join(ROOT, 'fixtures', 'test_seq-3341-7.mp3'))
+    }
+
+    // Static files under /fixtures/
+    if (pathname.startsWith('/fixtures/')) {
+      const rel = pathname.slice('/fixtures/'.length)
       if (rel.includes('..')) {
         log(req, 404)
         return notFound(res)
       }
-      log(req, 200, 'file', `pages/${rel}`)
-      return serveFile(res, join(ROOT, 'pages', rel))
+      log(req, 200, 'file', `fixtures/${rel}`)
+      return serveFile(res, join(ROOT, 'fixtures', rel))
     }
 
     // Redirects
     if (pathname === '/redirect/301') {
-      log(req, 301, 'redirect', '/pages/redirect-target.html')
-      res.writeHead(301, { Location: '/pages/redirect-target.html' })
+      log(req, 301, 'redirect', '/fixtures/redirect-target.html')
+      res.writeHead(301, { Location: '/fixtures/redirect-target.html' })
       return res.end()
     }
     if (pathname === '/redirect/302') {
-      log(req, 302, 'redirect', '/pages/redirect-target.html')
-      res.writeHead(302, { Location: '/pages/redirect-target.html' })
+      log(req, 302, 'redirect', '/fixtures/redirect-target.html')
+      res.writeHead(302, { Location: '/fixtures/redirect-target.html' })
       return res.end()
     }
     if (pathname === '/redirect/external') {
@@ -98,8 +105,8 @@ const server = createServer(async (req, res) => {
     // Track form redirect handler (POST that redirects to page with changed tracked element)
     if (pathname === '/track-form-redirect' && req.method === 'POST') {
       await collectBody(req)
-      log(req, 302, 'track-form-redirect', '/pages/track-changed.html')
-      res.writeHead(302, { Location: '/pages/track-changed.html' })
+      log(req, 302, 'track-form-redirect', '/fixtures/track-changed.html')
+      res.writeHead(302, { Location: '/fixtures/track-changed.html' })
       return res.end()
     }
 
@@ -144,7 +151,7 @@ async function serveFile(res, filePath) {
   try {
     const content = await readFile(filePath)
     const type = MIME[extname(filePath)] || 'application/octet-stream'
-    res.writeHead(200, { 'Content-Type': type })
+    res.writeHead(200, { 'Content-Type': type, 'Content-Length': content.length })
     res.end(content)
   } catch {
     notFound(res)
@@ -188,8 +195,8 @@ ${items}
   </ul>
   <nav>
     <a href="/">Hub</a>
-    <a href="/pages/form-get.html">GET form</a>
-    <a href="/pages/form-post.html">POST form</a>
+    <a href="/fixtures/form-get.html">GET form</a>
+    <a href="/fixtures/form-post.html">POST form</a>
   </nav>
 </body>
 </html>`
@@ -228,7 +235,7 @@ function trackFormResultHTML() {
   <p>This page has a different tracked stylesheet (v=2).</p>
   <nav>
     <a href="/">Hub</a>
-    <a href="/pages/track-form.html">Back</a>
+    <a href="/fixtures/track-form.html">Back</a>
   </nav>
 </body>
 </html>`
