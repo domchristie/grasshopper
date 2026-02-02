@@ -5,6 +5,7 @@
   "main": "grasshopper.js",
   "type": "module",
   "scripts": {
+    "start": "node test/server.js",
     "test": "playwright test"
   },
   "keywords": [],
