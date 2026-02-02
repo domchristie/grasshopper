@@ -74,8 +74,8 @@ function start() {
 					await viewTransition.updateCallbackDone
 				} catch { /* ignore */ }
 
-				if ((!ev.formData || response?.redirected) && trackedElementsChanged(doc))
-					return fallback(ev.destination.url)
+				if (canFallback(response, ev) && trackedElementsChanged(doc))
+					return fallback(response.url)
 
 				viewTransition = startViewTransition(() => swap(doc, ev))
 
@@ -104,8 +104,9 @@ async function fetchHTML(options) {
 	try {
 		// TODO before-fetch event
 		response = await fetch(options.to.href, options)
+		mediaType = response.headers.get('content-type')
 
-		if (!supportsMediaType(mediaType = response.headers.get('content-type'))) {
+		if (canFallback(response, options.navEvent) && !supportsMediaType(mediaType)) {
 			fallback(response.url)
 			return
 		}
@@ -132,7 +133,7 @@ async function fetchHTML(options) {
 
 	// If ClientRouter is not enabled on the incoming page, do a full page load to it.
 	// Unless this was a form submission, in which case we do not want to trigger another mutation.
-	if (!enabled(doc) && !options.body) {
+	if (canFallback(response, options.navEvent) && !enabled(doc)) {
 		fallback(response.url)
 		return
 	}
@@ -360,6 +361,9 @@ function trackedElementsChanged(doc) {
 	}
 	return false
 }
+
+const canFallback = (response, navEvent) =>
+	response.redirected || !navEvent.formData
 
 // Fallback to an unintercepted navigation
 function fallback(to) {

@@ -117,6 +117,14 @@ const server = createServer(async (req, res) => {
       return res.end(JSON.stringify({ type: 'json', message: 'This is not HTML' }))
     }
 
+    // POST returns page without hop meta (tests canFallback)
+    if (pathname === '/form-no-hop' && req.method === 'POST') {
+      await collectBody(req)
+      log(req, 200, 'form-no-hop', 'POST')
+      res.writeHead(200, { 'Content-Type': 'text/html' })
+      return res.end(noHopResultHTML())
+    }
+
     log(req, 404)
     notFound(res)
   } catch (err) {
@@ -237,6 +245,21 @@ function trackFormResultHTML() {
     <a href="/">Hub</a>
     <a href="/fixtures/track-form.html">Back</a>
   </nav>
+</body>
+</html>`
+}
+
+function noHopResultHTML() {
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <title>No Hop Result</title>
+  <script src="/grasshopper.js"></script>
+</head>
+<body>
+  <h1>No Hop Result</h1>
+  <p>This response has no hop meta tag.</p>
+  <a href="/">Hub</a>
 </body>
 </html>`
 }

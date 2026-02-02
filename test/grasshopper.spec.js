@@ -130,6 +130,22 @@ test.describe('Fallback', () => {
 		await page.waitForURL('/unsupported')
 		expect(await getDocumentId(page)).not.toBe(docId)
 	})
+
+	test('link to no-hop page triggers fallback', async ({ page }) => {
+		await page.goto('/')
+		const docId = await markDocument(page)
+		await page.click('a[href="/fixtures/no-hop.html"]')
+		await expect(page).toHaveTitle('No Hop')
+		expect(await getDocumentId(page)).not.toBe(docId)
+	})
+
+	test('POST to no-hop page avoids fallback', async ({ page }) => {
+		await page.goto('/fixtures/form-no-hop.html')
+		const docId = await markDocument(page)
+		await page.click('input[type="submit"]')
+		await expect(page).toHaveTitle('No Hop Result')
+		expect(await getDocumentId(page)).toBe(docId)
+	})
 })
 
 test.describe('Redirects', () => {
