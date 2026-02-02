@@ -76,7 +76,7 @@ function start() {
 				if (canFallback(response, ev) && trackedElementsChanged(doc))
 					return fallback(response.url)
 
-				viewTransition = startViewTransition(() => swap(doc, ev))
+				viewTransition = startViewTransition(ev, () => swap(doc, ev))
 
 				viewTransition.updateCallbackDone.finally(async () => {
 					await runScripts()
@@ -161,8 +161,8 @@ function preloadStyles(doc) {
 		})
 }
 
-function startViewTransition(update) {
-	if (document.startViewTransition) {
+function startViewTransition(navEvent, update) {
+	if (document.startViewTransition && !navEvent.hasUAVisualTransition) {
 		viewTransition = document.startViewTransition(update)
 	} else {
 		update()
