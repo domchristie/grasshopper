@@ -1,7 +1,7 @@
 # Grasshopper
 
 > [!WARNING]
-> Experimental & incomplete
+> Experimental
 
 Grasshopper intercepts link clicks and form submissions, fetching pages via the [Navigation API](https://developer.mozilla.org/en-US/docs/Web/API/Navigation_API) and swapping content while preserving designated elements.
 
@@ -28,44 +28,43 @@ When navigating to a page that contains an element with the same `id` and `data-
 
 **Requirements:**
 - The element must have both `data-hop-persist` and `id` attributes
-- The target page must contain a matching `<element id="..." data-hop-persist>` placeholder
+- The target page must contain a matching `data-hop-persist` and `id` attributes
 
 ## Disabling on Specific Links
 
 Set `data-hop="false"` on links or forms that should use standard browser navigation:
 
 ```html
-<a href="/download.pdf" data-hop="false">Download</a>
-<form action="/upload" data-hop="false">...</form>
+<a href="/subscribe" data-hop="false">Subscribe</a>
+<form action="/login" data-hop="false">...</form>
+<form action="/login">
+	<input type="submit" data-hop="false" />
+</form>
 ```
 
 You can also place this attribute on a parent element to disable all descendants:
 
 ```html
 <nav data-hop="false">
-  <a href="/external">All links here use standard navigation</a>
+  <a href="/about">All links here use standard navigation</a>
 </nav>
 ```
 
 ## History Behavior
 
-By default, navigations use `history.pushState`. To use `history.replaceState` instead, wrap the link in an element with `data-hop-type="replace"`:
+Links and forms push to the history stack by default. To replace the current history entry, add `data-hop-type="replace"` to the navigating element or its parent:
 
 ```html
-<div data-hop-type="replace">
-    <a href="/tab-2">Switch Tab</a>
-</div>
-```
-
-Or place it directly on the link:
-
-```html
-<a href="/tab-2" data-hop-type="replace">Switch Tab</a>
+<a href="/tab-2" data-hop-type="replace">About</a>
+<form action="/login" data-hop-type="replace">...</form>
+<form action="/login">
+	<input type="submit" data-hop-type="replace" />
+</form>
 ```
 
 ## Tracking Asset Changes
 
-Add `data-hop-track="reload"` to stylesheets or scripts that should trigger a full reload when they change:
+Add `data-hop-track="reload"` to elements (typically stylesheets or scripts) that should trigger a full reload when they change:
 
 ```html
 <link rel="stylesheet" href="/app.css?v=abc123" data-hop-track="reload">
@@ -84,7 +83,7 @@ When navigating to the same pathname with `replace` history mode, scroll positio
 
 ## Events
 
-Grasshopper dispatches events on `document`. All events bubble and are cancelable.
+Grasshopper dispatches pre-swap events on the navigation's source element (typically a link, or form submitter) if it exists, or the `document`. All events bubble.
 
 ### `hop:before-intercept`
 
@@ -92,9 +91,9 @@ Fired on the source element (link or form) before navigation is intercepted. Can
 
 ```js
 document.addEventListener('hop:before-intercept', (e) => {
-    if (someCondition) {
-        e.preventDefault() // Use standard navigation instead
-    }
+  if (someCondition) {
+    e.preventDefault() // Use standard navigation instead
+  }
 })
 ```
 
@@ -142,7 +141,7 @@ document.addEventListener('hop:loaded', () => {
 
 ## Browser Support
 
-Requires the [Navigation API](https://caniuse.com/mdn-api_navigation). Currently supported in Chrome, Edge, and other Chromium browsers. In unsupported browsers, standard navigation occurs.
+Requires the [Navigation API](https://caniuse.com/mdn-api_navigation).
 
 ## Attributes Reference
 
