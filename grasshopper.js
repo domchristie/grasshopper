@@ -26,8 +26,7 @@ function start() {
 			!send(ev.sourceElement, 'before-intercept')
 		) return
 
-		let response
-		let doc = ev.info?.hop?.doc
+		let { doc, response } = ev.info?.hop || {}
 
 		if (!nativePrecommit && ev.navigationType !== 'traverse') {
 			abortController = null
@@ -58,7 +57,7 @@ function start() {
 			)
 				return redirect(controller,
 					(response.redirected && response.url) || ev.destination.url, {
-					history, info: { ...ev.info, hop: { doc } }
+					history, info: { ...ev.info, hop: { doc, response } }
 				})
 		}
 
@@ -363,7 +362,7 @@ function trackedElementsChanged(doc) {
 }
 
 const canFallback = (response, navEvent) =>
-	response.redirected || !navEvent.formData
+	response?.redirected || !navEvent.formData
 
 // Fallback to an unintercepted navigation
 function fallback(to) {
