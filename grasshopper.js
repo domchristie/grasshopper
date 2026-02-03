@@ -16,17 +16,17 @@ function start() {
 
 	navigation.addEventListener('navigate', async function (ev) {
 		abortController?.abort()
+		let { doc, response, sourceElement } = ev.info?.hop || {}
+		sourceElement = sourceElement ?? ev.sourceElement
 
 		if (
 			!ev.canIntercept ||
 			ev.info?.hop === false ||
 			ev.downloadRequest ||
 			isHashChange(ev) ||
-			!enabled(ev.sourceElement) ||
-			!send(ev.sourceElement, 'before-intercept')
+			!enabled(sourceElement) ||
+			!send(sourceElement, 'before-intercept')
 		) return
-
-		let { doc, response } = ev.info?.hop || {}
 
 		if (!nativePrecommit && ev.navigationType !== 'traverse') {
 			abortController = null
@@ -57,7 +57,7 @@ function start() {
 			)
 				return redirect(controller,
 					(response.redirected && response.url) || ev.destination.url, {
-					history, info: { ...ev.info, hop: { doc, response } }
+					history, info: { ...ev.info, hop: { doc, response, sourceElement } }
 				})
 		}
 
