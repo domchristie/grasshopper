@@ -202,6 +202,87 @@ test.describe('Trackable Elements', () => {
 	})
 })
 
+test.describe('Scroll Behavior', () => {
+	test('push navigation scrolls to top', async ({ page }) => {
+		await page.goto('/fixtures/scroll-default.html')
+		// Scroll down first
+		await page.evaluate(() => scrollTo(0, 100))
+		await page.waitForFunction(() => scrollY > 90)
+
+		await page.click('a[href="/fixtures/scroll-target.html"]')
+		await expect(page).toHaveTitle('Scroll Target')
+		expect(await page.evaluate(() => scrollY)).toBe(0)
+	})
+
+	test('replace navigation to different page scrolls to top', async ({ page }) => {
+		await page.goto('/fixtures/scroll-preserve.html')
+		// Scroll down first
+		await page.evaluate(() => scrollTo(0, 100))
+		await page.waitForFunction(() => scrollY > 90)
+
+		await page.click('a[href="/fixtures/scroll-target.html"][data-hop-type="replace"]')
+		await expect(page).toHaveTitle('Scroll Target')
+		expect(await page.evaluate(() => scrollY)).toBe(0)
+	})
+
+	test('replace to self without preserve meta scrolls to top', async ({ page }) => {
+		await page.goto('/fixtures/scroll-default.html')
+		const docId = await markDocument(page)
+		// Scroll down first
+		await page.evaluate(() => scrollTo(0, 100))
+		await page.waitForFunction(() => scrollY > 90)
+
+		await page.click('a[href="/fixtures/scroll-default.html"][data-hop-type="replace"]')
+		await page.waitForFunction(() => scrollY < 10)
+		expect(await getDocumentId(page)).toBe(docId)
+		expect(await page.evaluate(() => scrollY)).toBe(0)
+	})
+
+	test('replace to self with preserve meta refreshes the page in-place', async ({ page }) => {
+		await page.goto('/fixtures/scroll-preserve.html')
+		const docId = await markDocument(page)
+		// Scroll down first
+		await page.evaluate(() => scrollTo(0, 100))
+		await page.waitForFunction(() => scrollY > 90)
+
+		// Track whether navEvent.scroll() was called by listening to scroll events
+		const scrollCallPromise = page.evaluate(() => new Promise(resolve => {
+			let scrollCalled = false
+			const handler = () => { scrollCalled = true }
+			addEventListener('scroll', handler)
+			document.addEventListener('hop:scrolled', () => {
+				removeEventListener('scroll', handler)
+				resolve(scrollCalled)
+			}, { once: true })
+		}))
+		const entriesBefore = await page.evaluate(() => navigation.entries().length)
+
+		await page.click('a[href="/fixtures/scroll-preserve.html"][data-hop-type="replace"]')
+		// When preserveScroll is true, no additional scroll events should be triggered
+		// (navEvent.scroll() is not called)
+		expect(await scrollCallPromise).toBe(false)
+		expect(await page.evaluate(() => scrollY)).toBe(100)
+		expect(await getDocumentId(page)).toBe(docId)
+		expect(await page.evaluate(() => navigation.entries().length)).toBe(entriesBefore)
+	})
+
+	test('non-replace link to self does not preserve scroll even with preserve meta', async ({ page }) => {
+		await page.goto('/fixtures/scroll-preserve.html')
+		const docId = await markDocument(page)
+		// Scroll down first
+		await page.evaluate(() => scrollTo(0, 100))
+		await page.waitForFunction(() => scrollY > 90)
+		const entriesBefore = await page.evaluate(() => navigation.entries().length)
+
+		await page.click('a[href="/fixtures/scroll-preserve.html"]:not([data-hop-type])')
+		await page.waitForFunction(() => scrollY < 10)
+		expect(await getDocumentId(page)).toBe(docId)
+		expect(await page.evaluate(() => scrollY)).toBe(0)
+		const entriesafter = await page.evaluate(() => navigation.entries().length)
+		expect(entriesafter).toBe(entriesBefore)
+	})
+})
+
 test.describe('Slow responses', () => {
 	test('slow response keeps same document', async ({ page }) => {
 		await page.goto('/')

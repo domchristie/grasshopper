@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Scroll Default</title>
+	<link rel="icon" href="data:,">
+	<script src="/grasshopper.js"></script>
+	<meta name="hop" content="true" />
+</head>
+<body>
+	<h1 style="margin-top: 150px">Scroll Default Test</h1>
+	<p>This page does NOT have hop-refresh-scroll meta tag</p>
+	<a href="/fixtures/scroll-default.html" data-hop-type="replace">Self with <code>data-hop-type="replace"</code></a>
+	<a href="/fixtures/scroll-default.html">Self without <code>data-hop-type="replace"</code></a>
+	<a href="/fixtures/scroll-target.html" data-hop-type="replace">Replace to different page</a>
+	<p id="scroll-target" style="margin-top: 150vh; margin-bottom: 150vh">Scroll target element</p>
+</body>
+</html>

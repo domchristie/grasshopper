@@ -73,13 +73,29 @@ Add `data-hop-track="reload"` to elements (typically stylesheets or scripts) tha
 
 During navigation, grasshopper compares tracked elements between the current and new document. If any tracked element is missing or different in the new document, a full page reload occurs. This ensures cache-busted assets always load fresh.
 
-## Scroll Behavior on Refresh
+## Scroll on Refresh
 
-When navigating to the same pathname with `replace` history mode, scroll position is normally reset. To preserve it:
+A "refresh" is a replace navigation to the same pathname. By default, scroll resets to the top or to a given fragment. To preserve scroll position on refresh:
 
 ```html
-<meta name="hop-refresh-scroll" content="preserve">
+<head>
+  <meta name="hop" content="true">
+  <meta name="hop-refresh-scroll" content="preserve">
+</head>
+<body>
+  <nav data-hop-type="replace">
+    <a href="?sort=name">Sort by name</a>
+    <a href="?sort=date">Sort by date</a>
+  </nav>
+</body>
 ```
+
+This is useful for filtering, sorting, or making changes in-place.
+
+**Requirements:**
+- The navigation must be to the same pathname
+- The triggering element must have `data-hop-type="replace"` (or be inside one)
+- The page must have `<meta name="hop-refresh-scroll" content="preserve">`
 
 ## Events
 
@@ -157,4 +173,4 @@ Requires the [Navigation API](https://caniuse.com/mdn-api_navigation).
 | Name | Content | Description |
 |------|---------|-------------|
 | `hop` | `"true"` | Enables grasshopper. Required on both pages. |
-| `hop-refresh-scroll` | `"preserve"` | Preserves scroll on same-path replace navigations. |
+| `hop-refresh-scroll` | `"preserve"` | Preserves scroll on refresh (same-path replace navigation). |

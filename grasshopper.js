@@ -48,8 +48,13 @@ function start() {
 			}) || {})
 			if (!response || !doc) return Promise.reject()
 
-			let history = ev.sourceElement?.closest('[data-hop-type="replace"]')
-				? 'replace' : ev.navigationType
+			let history = (
+				(navigation.transition?.from?.url || location.href) === response.url
+					|| sourceElement?.closest('[data-hop-type="replace"]')
+					? 'replace'
+					: ev.navigationType
+			)
+
 			if (
 				(!nativePrecommit && ev.navigationType !== 'traverse') ||
 				(response.redirected && response.url) ||
@@ -255,9 +260,21 @@ function attachShadowRoots(root) {
 
 async function scroll(navEvent) {
 	await sendInterceptable(document, 'before-scroll')
-	if (['push', 'replace'].includes(navEvent.navigationType))
-		scrollTo(0, 0) // Fix when navigating from a scrolled page in Chrome/Safari
-	navEvent.scroll()
+
+	const sourceElement = navEvent.info?.hop?.sourceElement ?? navEvent.sourceElement
+	const isRefresh = (
+		new URL(navigation.transition.from.url).pathname === new URL(location.href).pathname
+			&& !!sourceElement?.closest('[data-hop-type="replace"]')
+	)
+	const preserveScroll = isRefresh &&
+		document.querySelector('meta[name="hop-refresh-scroll"][content="preserve"]')
+
+	if (!preserveScroll) {
+		if (['push', 'replace'].includes(navEvent.navigationType))
+			scrollTo(0, 0) // Fix when navigating from a scrolled page in Chrome/Safari
+		navEvent.scroll()
+	}
+
 	send(document, 'scrolled')
 }
 
