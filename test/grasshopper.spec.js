@@ -131,6 +131,14 @@ test.describe('Fallback', () => {
 		expect(await getDocumentId(page)).not.toBe(docId)
 	})
 
+	test('external link falls back to full browser navigation', async ({ page }) => {
+		await page.goto('/')
+		const docId = await markDocument(page)
+		await page.click('a[href="http://localhost:3001/"]')
+		await page.waitForURL(/localhost:3001/)
+		expect(await getDocumentId(page)).not.toBe(docId)
+	})
+
 	test('link to no-hop page triggers fallback', async ({ page }) => {
 		await page.goto('/')
 		const docId = await markDocument(page)
