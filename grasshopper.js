@@ -16,11 +16,13 @@ function start() {
 
 	navigation.addEventListener('navigate', async function (ev) {
 		abortController?.abort()
+		const to = new URL(ev.destination.url)
 		let { doc, response, sourceElement } = ev.info?.hop || {}
 		sourceElement = sourceElement ?? ev.sourceElement
 
 		if (
 			!ev.canIntercept ||
+			to.origin !== location.origin || // Safari fix
 			ev.info?.hop === false ||
 			ev.downloadRequest ||
 			isHashChange(ev) ||
@@ -40,7 +42,7 @@ function start() {
 
 		async function precommitHandler(controller) {
 			;({ response, doc } = await fetchHTML({
-				to: new URL(ev.destination.url),
+				to,
 				method: ev.formData ? 'POST' : 'GET',
 				body: ev.formData,
 				signal: abortController === null ? null : (abortController || ev).signal,

@@ -141,7 +141,7 @@ server.listen(PORT, () => console.log(`http://localhost:${PORT}`))
 createServer((req, res) => {
   console.log(`GET localhost:${PORT + 1}/ 200 cors-target`)
   res.writeHead(200, { 'Content-Type': 'text/html', 'Access-Control-Allow-Origin': '*' })
-  res.end('<!DOCTYPE html><html><head><title>CORS</title><meta name="hop" content="true"/></head><body><h1>Cross-Origin Page</h1><a href="http://localhost:' + PORT + '/">Back</a></body></html>')
+  res.end('<!DOCTYPE html><html><head><title>CORS</title></head><body><h1>Cross-Origin Page</h1><a href="http://localhost:' + PORT + '/">Back</a></body></html>')
 }).listen(PORT + 1, () => console.log(`http://localhost:${PORT + 1} (cors)`))
 
 // --- helpers ---
