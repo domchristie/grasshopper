@@ -79,7 +79,7 @@ function start() {
 				} catch { /* ignore */ }
 
 				if (canFallback(response, ev) && trackedElementsChanged(doc))
-					return fallback(response.url)
+					return navigation.reload({ info: { hop: false } })
 
 				viewTransition = startViewTransition(ev, () => swap(doc, ev))
 
