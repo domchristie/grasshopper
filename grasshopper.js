@@ -56,14 +56,14 @@ function start() {
 					? 'replace'
 					: ev.navigationType
 			)
+			let redirectTo = response.redirected && response.url
 
-			if (
-				(!nativePrecommit && ev.navigationType !== 'traverse') ||
-				(response.redirected && response.url) ||
-				history !== ev.navigationType
+			if (nativePrecommit
+				? redirectTo || history !== ev.navigationType
+				: ev.navigationType !== 'traverse'
 			)
 				return redirect(controller,
-					(response.redirected && response.url) || ev.destination.url, {
+					redirectTo || ev.destination.url, {
 					history, info: { ...ev.info, hop: { doc, response, sourceElement } }
 				})
 		}
