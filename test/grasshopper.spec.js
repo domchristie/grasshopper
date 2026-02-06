@@ -151,7 +151,7 @@ test.describe('Fallback', () => {
 		await page.goto('/fixtures/form-no-hop.html')
 		const docId = await markDocument(page)
 		await page.click('input[type="submit"]')
-		await expect(page).toHaveTitle('No Hop Result')
+		await expect(page).toHaveTitle('No Hop')
 		expect(await getDocumentId(page)).toBe(docId)
 	})
 })
@@ -197,7 +197,7 @@ test.describe('Trackable Elements', () => {
 		const docId = await markDocument(page)
 		await page.click('input[type="submit"]')
 		await page.waitForURL('/track-form')
-		await expect(page).toHaveTitle('Track Form Result')
+		await expect(page).toHaveTitle('Track Changed')
 		expect(await getDocumentId(page)).toBe(docId)
 	})
 
