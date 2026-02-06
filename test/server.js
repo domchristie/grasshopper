@@ -98,8 +98,7 @@ const server = createServer(async (req, res) => {
     if (pathname === '/track-form' && req.method === 'POST') {
       await collectBody(req)
       log(req, 200, 'track-form', 'POST')
-      res.writeHead(200, { 'Content-Type': 'text/html' })
-      return res.end(trackFormResultHTML())
+      return serveFile(res, join(ROOT, 'fixtures', 'track-changed.html'))
     }
 
     // Track form redirect handler (POST that redirects to page with changed tracked element)
@@ -121,8 +120,7 @@ const server = createServer(async (req, res) => {
     if (pathname === '/form-no-hop' && req.method === 'POST') {
       await collectBody(req)
       log(req, 200, 'form-no-hop', 'POST')
-      res.writeHead(200, { 'Content-Type': 'text/html' })
-      return res.end(noHopResultHTML())
+      return serveFile(res, join(ROOT, 'fixtures', 'no-hop.html'))
     }
 
     log(req, 404)
@@ -229,37 +227,3 @@ function slowHTML(delay) {
 </html>`
 }
 
-function trackFormResultHTML() {
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <title>Track Form Result</title>
-  <script src="/grasshopper.js"></script>
-  <meta name="hop" content="true" />
-  <link rel="stylesheet" href="/styles.css?v=2" data-hop-track="reload">
-</head>
-<body>
-  <h1>Track Form Result</h1>
-  <p>This page has a different tracked stylesheet (v=2).</p>
-  <nav>
-    <a href="/">Hub</a>
-    <a href="/fixtures/track-form.html">Back</a>
-  </nav>
-</body>
-</html>`
-}
-
-function noHopResultHTML() {
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <title>No Hop Result</title>
-  <script src="/grasshopper.js"></script>
-</head>
-<body>
-  <h1>No Hop Result</h1>
-  <p>This response has no hop meta tag.</p>
-  <a href="/">Hub</a>
-</body>
-</html>`
-}
