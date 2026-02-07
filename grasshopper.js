@@ -125,29 +125,26 @@ async function fetchHTML(options) {
 		}
 
 		text = await response.text()
+
+		parser = parser || new DOMParser()
+		const doc = parser.parseFromString(text, mediaType)
+		doc.querySelectorAll('noscript').forEach((el) => el.remove())
+
+		if (canFallback(response, options.navEvent) && !enabled(doc)) {
+			fallback(response.url)
+			return
+		}
+
+		const links = preloadStyles(doc)
+		links.length && (await Promise.all(links)) // todo: signal.aborted
 		// TODO fetched event
+		return { response, doc }
 	} catch(e) {
 		// TODO fetch-errored event
 		throw e
 	} finally {
 		// TODO fetch-done event
 	}
-
-	parser = parser || new DOMParser()
-	const doc = parser.parseFromString(text, mediaType)
-	doc.querySelectorAll('noscript').forEach((el) => el.remove())
-
-	// If ClientRouter is not enabled on the incoming page, do a full page load to it.
-	// Unless this was a form submission, in which case we do not want to trigger another mutation.
-	if (canFallback(response, options.navEvent) && !enabled(doc)) {
-		fallback(response.url)
-		return
-	}
-
-	const links = preloadStyles(doc)
-	links.length && (await Promise.all(links)) // todo: signal.aborted
-
-	return { response, doc }
 }
 
 function preloadStyles(doc) {
