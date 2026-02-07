@@ -108,7 +108,7 @@ addEventListener('DOMContentLoaded', start)
 async function fetchHTML(options) {
 	let response, mediaType, text
 	try {
-		// TODO before-fetch event
+		if (!await sendInterceptable(document, 'before-fetch', { options })) return
 		response = await fetch(options.to.href, options)
 		mediaType = response.headers.get('content-type')
 
@@ -137,13 +137,13 @@ async function fetchHTML(options) {
 
 		const links = preloadStyles(doc)
 		links.length && (await Promise.all(links)) // todo: signal.aborted
-		// TODO fetched event
+		send(document, 'fetched', { options, response, doc })
 		return { response, doc }
-	} catch(e) {
-		// TODO fetch-errored event
-		throw e
+	} catch(error) {
+		send(document, 'fetch-errored', { options, error })
+		return { error }
 	} finally {
-		// TODO fetch-done event
+		send(document, 'fetch-done', { options })
 	}
 }
 
