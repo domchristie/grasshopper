@@ -106,7 +106,7 @@ function start() {
 addEventListener('DOMContentLoaded', start)
 
 async function fetchHTML(options) {
-	let response, mediaType, text
+	let response, mediaType
 	try {
 		if (!await sendInterceptable(document, 'before-fetch', { options })) return
 		response = await fetch(options.to.href, options)
@@ -124,8 +124,7 @@ async function fetchHTML(options) {
 			}
 		}
 
-		text = await response.text()
-
+		const text = await response.text()
 		parser = parser || new DOMParser()
 		const doc = parser.parseFromString(text, mediaType)
 		doc.querySelectorAll('noscript').forEach((el) => el.remove())
@@ -385,7 +384,6 @@ function fallback(to) {
 	return navigation.navigate(to, { info: { hop: false } }).finished
 }
 
-// TODO figure out handling of non-controller case
 function redirect(controller, to, options = {}) {
 	try {
 		controller.redirect(to, options)
