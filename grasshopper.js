@@ -18,7 +18,7 @@ function start() {
 		abortController?.abort()
 		const to = new URL(ev.destination.url)
 		let { doc, response, sourceElement } = ev.info?.hop || {}
-		sourceElement = sourceElement ?? ev.sourceElement
+		sourceElement = sourceElement ?? (ev.sourceElement || undefined)
 
 		if (
 			!ev.canIntercept ||
@@ -41,7 +41,8 @@ function start() {
 		}
 
 		async function precommitHandler(controller) {
-			;({ response, doc } = await fetchHTML({
+			; ({ response, doc } = await fetchHTML({
+				sourceElement,
 				to,
 				method: ev.formData ? 'POST' : 'GET',
 				body: ev.formData,
@@ -108,7 +109,7 @@ addEventListener('DOMContentLoaded', start)
 async function fetchHTML(options) {
 	let response, mediaType
 	try {
-		if (!await sendInterceptable(document, 'before-fetch', { options })) return
+		if (!await sendInterceptable(options.sourceElement, 'before-fetch', { options })) return
 		response = await fetch(options.to.href, options)
 		mediaType = response.headers.get('content-type')
 
@@ -136,13 +137,13 @@ async function fetchHTML(options) {
 
 		const links = preloadStyles(doc)
 		links.length && (await Promise.all(links)) // todo: signal.aborted
-		send(document, 'fetched', { options, response, doc })
+		send(options.sourceElement, 'fetched', { options, response, doc })
 		return { response, doc }
 	} catch(error) {
-		send(document, 'fetch-errored', { options, error })
+		send(options.sourceElement, 'fetch-errored', { options, error })
 		return { error }
 	} finally {
-		send(document, 'fetch-done', { options })
+		send(options.sourceElement, 'fetch-done', { options })
 	}
 }
 

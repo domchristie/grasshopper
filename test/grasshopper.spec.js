@@ -292,20 +292,21 @@ test.describe('Scroll Behavior', () => {
 })
 
 test.describe('Fetch Events', () => {
-	test('successful navigation fires before-fetch, fetched, and fetch-done', async ({ page }) => {
+	test('successful navigation fires before-fetch, fetched, and fetch-done on the source element', async ({ page }) => {
 		await page.goto('/')
 		const events = page.evaluate(() => {
+			const link = document.querySelector('a[href="/fixtures/two.html"]')
 			const events = []
-			document.addEventListener('hop:before-fetch', (e) => {
-				events.push({ type: 'before-fetch', url: e.detail.options.to.href })
+			link.addEventListener('hop:before-fetch', (e) => {
+				events.push({ type: 'before-fetch', url: e.detail.options.to.href, target: e.target.tagName })
 			})
-			document.addEventListener('hop:fetched', (e) => {
-				events.push({ type: 'fetched', url: e.detail.options.to.href, hasDoc: !!e.detail.doc, hasResponse: !!e.detail.response })
+			link.addEventListener('hop:fetched', (e) => {
+				events.push({ type: 'fetched', url: e.detail.options.to.href, hasDoc: !!e.detail.doc, hasResponse: !!e.detail.response, target: e.target.tagName })
 			})
-			document.addEventListener('hop:fetch-done', (e) => {
-				events.push({ type: 'fetch-done', url: e.detail.options.to.href })
+			link.addEventListener('hop:fetch-done', (e) => {
+				events.push({ type: 'fetch-done', url: e.detail.options.to.href, target: e.target.tagName })
 			})
-			document.addEventListener('hop:fetch-errored', (e) => {
+			link.addEventListener('hop:fetch-errored', (e) => {
 				events.push({ type: 'fetch-errored' })
 			})
 			return new Promise(resolve => {
@@ -319,8 +320,11 @@ test.describe('Fetch Events', () => {
 		const result = await events
 		expect(result.map(e => e.type)).toEqual(['before-fetch', 'fetched', 'fetch-done'])
 		expect(result[0].url).toContain('/fixtures/two.html')
+		expect(result[0].target).toBe('A')
 		expect(result[1].hasDoc).toBe(true)
 		expect(result[1].hasResponse).toBe(true)
+		expect(result[1].target).toBe('A')
+		expect(result[2].target).toBe('A')
 	})
 
 	test('before-fetch is interceptable and prevents navigation', async ({ page }) => {
@@ -340,16 +344,17 @@ test.describe('Fetch Events', () => {
 		expect(await getDocumentId(page)).toBe(docId)
 	})
 
-	test('fetch-errored fires on network error', async ({ page }) => {
+	test('fetch-errored fires on source element on network error', async ({ page }) => {
 		await page.goto('/')
 
 		const events = page.evaluate(() => {
+			const link = document.querySelector('a[href="/fixtures/two.html"]')
 			const events = []
-			document.addEventListener('hop:fetch-errored', (e) => {
-				events.push({ type: 'fetch-errored', url: e.detail.options.to.href, hasError: !!e.detail.error })
+			link.addEventListener('hop:fetch-errored', (e) => {
+				events.push({ type: 'fetch-errored', url: e.detail.options.to.href, hasError: !!e.detail.error, target: e.target.tagName })
 			})
-			document.addEventListener('hop:fetch-done', (e) => {
-				events.push({ type: 'fetch-done', url: e.detail.options.to.href })
+			link.addEventListener('hop:fetch-done', (e) => {
+				events.push({ type: 'fetch-done', url: e.detail.options.to.href, target: e.target.tagName })
 			})
 			return new Promise(resolve => {
 				document.addEventListener('hop:fetch-done', () => resolve(events), { once: true })
@@ -365,6 +370,8 @@ test.describe('Fetch Events', () => {
 		expect(result.map(e => e.type)).toEqual(['fetch-errored', 'fetch-done'])
 		expect(result[0].hasError).toBe(true)
 		expect(result[0].url).toContain('/fixtures/two.html')
+		expect(result[0].target).toBe('A')
+		expect(result[1].target).toBe('A')
 	})
 })
 
