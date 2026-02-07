@@ -99,7 +99,16 @@ This is useful for filtering, sorting, or making changes in-place.
 
 ## Events
 
-Grasshopper dispatches pre-swap events on the navigation's source element (typically a link, or form submitter) if it exists, or the `document`. All events bubble.
+Grasshopper dispatches events on the navigation's source element (typically a link, or form submitter) if it exists, or the `document`. All events bubble.
+
+- [`hop:before-intercept`](#hopbefore-intercept) - Cancelable, falls back to standard navigation
+- [`hop:before-fetch`](#hopbefore-fetch) - Cancelable, skips the fetch
+- [`hop:fetched`](#hopfetched) - After successful fetch and stylesheet preloading
+- [`hop:fetch-errored`](#hopfetch-errored) - On fetch error
+- [`hop:fetch-done`](#hopfetch-done) - After every fetch attempt (finally)
+- [`hop:before-scroll`](#hopbefore-scroll) - Interceptable, before scroll restoration
+- [`hop:scrolled`](#hopscrolled) - After scroll restoration
+- [`hop:loaded`](#hoploaded) - After swap and script execution
 
 ### `hop:before-intercept`
 
