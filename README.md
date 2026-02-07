@@ -113,6 +113,47 @@ document.addEventListener('hop:before-intercept', (e) => {
 })
 ```
 
+### `hop:before-fetch`
+
+Fired on the source element before the page is fetched. Cancel to skip the fetch entirely. The `detail.options` object contains `sourceElement`, `to` (URL), `method`, `body`, `signal`, and `navEvent`:
+
+```js
+document.addEventListener('hop:before-fetch', (e) => {
+  console.log('Fetching', e.detail.options.to.href)
+})
+```
+
+### `hop:fetched`
+
+Fired on the source element after the page has been fetched and new stylesheets have been preloaded. The detail includes the fetch `response` and the parsed `doc`:
+
+```js
+document.addEventListener('hop:fetched', (e) => {
+  const { response, doc } = e.detail
+  console.log('Fetched', response.url, doc.title)
+})
+```
+
+### `hop:fetch-errored`
+
+Fired on the source element when the fetch throws an error (e.g. network failure):
+
+```js
+document.addEventListener('hop:fetch-errored', (e) => {
+  console.error('Fetch failed', e.detail.error)
+})
+```
+
+### `hop:fetch-done`
+
+Fired on the source element after every fetch attempt, whether it succeeded or failed. Useful for cleanup like hiding loading indicators:
+
+```js
+document.addEventListener('hop:fetch-done', () => {
+  hideLoadingSpinner()
+})
+```
+
 ### `hop:before-scroll`
 
 Fired before scroll position is restored. You can intercept and provide custom scroll behavior:
