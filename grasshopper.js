@@ -198,7 +198,7 @@ function swapHeadElements(doc) {
 
 	for (const oldEl of oldEls) {
 		const newEl = newEls.find(newEl => newEl.isEqualNode(oldEl))
-		newEl ? newEl.remove() : oldEl.remove() // todo: track element reloads
+		newEl ? newEl.remove() : oldEl.remove()
 	}
 	flagNewScripts(doc.head.getElementsByTagName('script'))
 	document.head.append(...doc.head.children)
