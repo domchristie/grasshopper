@@ -22,7 +22,7 @@ function start() {
 
 		if (
 			!ev.canIntercept ||
-			to.origin !== location.origin || // Safari fix
+			to.origin !== location.origin || // WebKit fix
 			ev.info?.hop === false ||
 			ev.downloadRequest ||
 			isHashChange(ev) ||
@@ -270,7 +270,7 @@ async function scroll(navEvent) {
 
 	if (!preserveScroll) {
 		if (['push', 'replace'].includes(navEvent.navigationType))
-			scrollTo(0, 0) // Fix when navigating from a scrolled page in Chrome/Safari
+			scrollTo(0, 0) // Fix when navigating from a scrolled page in Chrome/WebKit
 		navEvent.scroll()
 	}
 
