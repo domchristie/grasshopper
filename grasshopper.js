@@ -107,11 +107,11 @@ function start() {
 addEventListener('DOMContentLoaded', start)
 
 async function fetchHTML(options) {
-	let response, mediaType
 	try {
 		if (!await sendInterceptable(options.sourceElement, 'before-fetch', { options })) return
-		response = await fetch(options.to.href, options)
-		mediaType = response.headers.get('content-type')
+		const response = await fetch(options.to.href, options)
+		const contentType = response.headers.get('content-type')
+		const mediaType = contentType.split(';')[0].trim()
 
 		if (canFallback(response, options.navEvent) && !supportsMediaType(mediaType)) {
 			fallback(response.url)

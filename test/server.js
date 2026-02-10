@@ -7,10 +7,10 @@ const ROOT = import.meta.dirname
 const PROJECT_ROOT = join(ROOT, '..')
 
 const MIME = {
-  '.html': 'text/html',
-  '.js': 'application/javascript',
-  '.css': 'text/css',
-  '.json': 'application/json',
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
   '.mp3': 'audio/mpeg',
 }
 
@@ -76,7 +76,7 @@ const server = createServer(async (req, res) => {
       log(req, 200, 'slow', `delay=${delay}ms`)
       await new Promise(r => setTimeout(r, delay))
       if (res.destroyed) return
-      res.writeHead(200, { 'Content-Type': 'text/html' })
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
       return res.end(slowHTML(delay))
     }
 
@@ -90,7 +90,7 @@ const server = createServer(async (req, res) => {
         params = url.searchParams
       }
       log(req, 200, 'form', Object.fromEntries(params))
-      res.writeHead(200, { 'Content-Type': 'text/html' })
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
       return res.end(formResultHTML(req.method, params))
     }
 
@@ -140,7 +140,7 @@ server.listen(PORT, () => console.log(`http://localhost:${PORT}`))
 // Minimal CORS server on PORT+1 for cross-origin redirect testing
 createServer((req, res) => {
   console.log(`GET localhost:${PORT + 1}/ 200 cors-target`)
-  res.writeHead(200, { 'Content-Type': 'text/html', 'Access-Control-Allow-Origin': '*' })
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Access-Control-Allow-Origin': '*' })
   res.end('<!DOCTYPE html><html><head><title>CORS</title></head><body><h1>Cross-Origin Page</h1><a href="http://localhost:' + PORT + '/">Back</a></body></html>')
 }).listen(PORT + 1, () => console.log(`http://localhost:${PORT + 1} (cors)`))
 
