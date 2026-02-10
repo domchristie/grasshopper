@@ -1,9 +1,6 @@
 # Grasshopper
 
-> [!WARNING]
-> Experimental
-
-Grasshopper intercepts link clicks and form submissions, fetching pages via the [Navigation API](https://developer.mozilla.org/en-US/docs/Web/API/Navigation_API) and swapping content while preserving designated elements.
+Faster HTML over-the-wire navigations using the [Navigation API](https://developer.mozilla.org/en-US/docs/Web/API/Navigation_API). Lightweight and extensible.
 
 ## Quick Start
 
