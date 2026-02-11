@@ -20,6 +20,14 @@ function start() {
 		let { doc, response, sourceElement } = ev.info?.hop || {}
 		sourceElement = sourceElement ?? ev.sourceElement
 
+		const options = {
+			sourceElement,
+			to,
+			method: ev.formData ? 'POST' : 'GET',
+			body: ev.formData,
+			navEvent: ev
+		}
+
 		if (
 			!ev.canIntercept ||
 			to.origin !== location.origin || // WebKit fix
@@ -41,15 +49,7 @@ function start() {
 		}
 
 		async function precommitHandler(controller) {
-			; ({ response, doc } = await fetchHTML({
-				sourceElement,
-				to,
-				method: ev.formData ? 'POST' : 'GET',
-				body: ev.formData,
-				signal: abortController === null ? null : (abortController || ev).signal,
-				navEvent: ev
-			}) || {})
-			if (!response || !doc) return Promise.reject()
+			;({ response, doc } = await fetchHTML(options) || {})
 
 			let history = (
 				(navigation.transition?.from?.url || location.href) === response.url
@@ -109,6 +109,7 @@ addEventListener('DOMContentLoaded', start)
 async function fetchHTML(options) {
 	try {
 		if (!await sendInterceptable(options.sourceElement, 'before-fetch', { options })) return
+		options.signal = abortController === null ? null : (abortController || options.navEvent).signal
 		const response = await fetch(options.to.href, options)
 		const contentType = response.headers.get('content-type')
 		const mediaType = contentType.split(';')[0].trim()
