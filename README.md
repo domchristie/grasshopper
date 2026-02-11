@@ -96,97 +96,115 @@ This is useful for filtering, sorting, or making changes in-place.
 
 ## Events
 
-Grasshopper dispatches events on the navigation's source element (typically a link, or form submitter) if it exists, or the `document`. All events bubble.
+Events are dispatched on the navigation's source element (typically a link or form submitter) if it exists, or the `document`. 
 
-- [`hop:before-intercept`](#hopbefore-intercept) - Cancelable, falls back to standard navigation
-- [`hop:before-fetch`](#hopbefore-fetch) - Cancelable, skips the fetch
-- [`hop:fetched`](#hopfetched) - After successful fetch and stylesheet preloading
-- [`hop:fetch-errored`](#hopfetch-errored) - On fetch error
-- [`hop:fetch-done`](#hopfetch-done) - After every fetch attempt (finally)
-- [`hop:before-scroll`](#hopbefore-scroll) - Interceptable, before scroll restoration
-- [`hop:scrolled`](#hopscrolled) - After scroll restoration
-- [`hop:loaded`](#hoploaded) - After swap and script execution
+Events with an `options` detail contain: `sourceElement`, `to` (URL), `method`, `body`, `signal`, and `navEvent`.
 
-### `hop:before-intercept`
+| Event | Target | Cancelable | Interceptable | Detail |
+|-------|--------|:----------:|:-------------:|--------|
+| `hop:before-intercept` | source element | Yes | | `{ options }` |
+| `hop:before-fetch` | source element | Yes | Yes | `{ options }` |
+| `hop:fetch-load` | source element | | | `{ options, response, doc }` |
+| `hop:fetch-error` | source element | | | `{ options, error }` |
+| `hop:fetch-end` | source element | | | `{ options }` |
+| `hop:before-transition` | source element | Yes | Yes | `{ options }` |
+| `hop:before-swap` | source element | Yes | Yes | `{ options }` |
+| `hop:after-swap` | document | | | `{ options }` |
+| `hop:before-scroll` | document | | Yes | |
+| `hop:scrolled` | document | | | |
+| `hop:load` | document | | | `{ options }` |
+| `hop:after-transition` | document | | | `{ options }` |
 
-Fired on the source element (link or form) before navigation is intercepted. Cancel to fall back to standard navigation:
+### Cancelable events
+
+**Cancelable** events can be prevented with `e.preventDefault()`. This skips the associated step:
 
 ```js
 document.addEventListener('hop:before-intercept', (e) => {
   if (someCondition) {
-    e.preventDefault() // Use standard navigation instead
+    e.preventDefault() // Fall back to standard navigation
   }
 })
 ```
 
-### `hop:before-fetch`
+### Interceptable events
 
-Fired on the source element before the page is fetched. Cancel to skip the fetch entirely. The `detail.options` object contains `sourceElement`, `to` (URL), `method`, `body`, `signal`, and `navEvent`:
+**Interceptable** events expose an `e.intercept(callback)` method. The callback is an async function that runs before the default behavior proceeds:
 
 ```js
-document.addEventListener('hop:before-fetch', (e) => {
-  console.log('Fetching', e.detail.options.to.href)
+document.addEventListener('hop:before-scroll', (e) => {
+  e.intercept(async () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  })
 })
 ```
 
-### `hop:fetched`
+### `hop:before-intercept`
 
-Fired on the source element after the page has been fetched and new stylesheets have been preloaded. The detail includes the fetch `response` and the parsed `doc`:
+Fired before navigation is intercepted. Cancel to fall back to standard browser navigation.
+
+### `hop:before-fetch`
+
+Fired before the page is fetched. Cancel to skip the fetch entirely.
+
+### `hop:fetch-load`
+
+Fired after the page has been fetched and new stylesheets have been preloaded:
 
 ```js
-document.addEventListener('hop:fetched', (e) => {
+document.addEventListener('hop:fetch-load', (e) => {
   const { response, doc } = e.detail
   console.log('Fetched', response.url, doc.title)
 })
 ```
 
-### `hop:fetch-errored`
+### `hop:fetch-error`
 
-Fired on the source element when the fetch throws an error (e.g. network failure):
+Fired when the fetch throws an error (e.g. network failure):
 
 ```js
-document.addEventListener('hop:fetch-errored', (e) => {
+document.addEventListener('hop:fetch-error', (e) => {
   console.error('Fetch failed', e.detail.error)
 })
 ```
 
-### `hop:fetch-done`
+### `hop:fetch-end`
 
-Fired on the source element after every fetch attempt, whether it succeeded or failed. Useful for cleanup like hiding loading indicators:
+Fired after every fetch attempt, whether it succeeded or failed. Useful for cleanup like hiding loading indicators:
 
 ```js
-document.addEventListener('hop:fetch-done', () => {
+document.addEventListener('hop:fetch-end', () => {
   hideLoadingSpinner()
 })
 ```
 
+### `hop:before-transition`
+
+Fired before `document.startViewTransition()` is called. Cancel to skip the view transition (the swap still runs without an animation).
+
+### `hop:before-swap`
+
+Fired before the DOM swap. Cancel to prevent the swap entirely (the document content remains unchanged).
+
+### `hop:after-swap`
+
+Fired on `document` immediately after the DOM swap.
+
 ### `hop:before-scroll`
 
-Fired before scroll position is restored. You can intercept and provide custom scroll behavior:
-
-```js
-document.addEventListener('hop:before-scroll', (e) => {
-    e.intercept(async () => {
-        // Custom scroll logic
-        window.scrollTo({ top: 0, behavior: 'smooth' })
-        return true
-    })
-})
-```
+Fired before scroll position is set i.e. scrolled to top, scrolled to a fragment, or restored after a traversal.
 
 ### `hop:scrolled`
 
-Fired after scroll position is restored.
+Fired after scroll position is restored i.e. scrolled to top, scrolled to a fragment, or restored after a traversal.
 
-### `hop:loaded`
+### `hop:load`
 
-Fired after the page swap is complete and new scripts have executed. Use this to reinitialize JavaScript that depends on the new content:
+Fired on `document` after the swap is complete and new scripts have executed.
 
-```js
-document.addEventListener('hop:loaded', () => {
-    initializeComponents()
-})
-```
+### `hop:after-transition`
+
+Fired on `document` after the view transition finishes.
 
 ## How It Works
 

@@ -292,7 +292,7 @@ test.describe('Scroll Behavior', () => {
 })
 
 test.describe('Fetch Events', () => {
-	test('successful navigation fires before-fetch, fetched, and fetch-done on the source element', async ({ page }) => {
+	test('successful navigation fires before-fetch, fetch-load, and fetch-end on the source element', async ({ page }) => {
 		await page.goto('/')
 		const events = page.evaluate(() => {
 			const link = document.querySelector('a[href="/fixtures/two.html"]')
@@ -300,17 +300,17 @@ test.describe('Fetch Events', () => {
 			link.addEventListener('hop:before-fetch', (e) => {
 				events.push({ type: 'before-fetch', url: e.detail.options.to.href, target: e.target.tagName })
 			})
-			link.addEventListener('hop:fetched', (e) => {
-				events.push({ type: 'fetched', url: e.detail.options.to.href, hasDoc: !!e.detail.doc, hasResponse: !!e.detail.response, target: e.target.tagName })
+			link.addEventListener('hop:fetch-load', (e) => {
+				events.push({ type: 'fetch-load', url: e.detail.options.to.href, target: e.target.tagName })
 			})
-			link.addEventListener('hop:fetch-done', (e) => {
-				events.push({ type: 'fetch-done', url: e.detail.options.to.href, target: e.target.tagName })
+			link.addEventListener('hop:fetch-end', (e) => {
+				events.push({ type: 'fetch-end', url: e.detail.options.to.href, target: e.target.tagName })
 			})
-			link.addEventListener('hop:fetch-errored', (e) => {
-				events.push({ type: 'fetch-errored' })
+			link.addEventListener('hop:fetch-error', (e) => {
+				events.push({ type: 'fetch-error' })
 			})
 			return new Promise(resolve => {
-				document.addEventListener('hop:loaded', () => resolve(events), { once: true })
+				document.addEventListener('hop:load', () => resolve(events), { once: true })
 			})
 		})
 
@@ -318,11 +318,9 @@ test.describe('Fetch Events', () => {
 		await expect(page).toHaveTitle('Two')
 
 		const result = await events
-		expect(result.map(e => e.type)).toEqual(['before-fetch', 'fetched', 'fetch-done'])
+		expect(result.map(e => e.type)).toEqual(['before-fetch', 'fetch-load', 'fetch-end'])
 		expect(result[0].url).toContain('/fixtures/two.html')
 		expect(result[0].target).toBe('A')
-		expect(result[1].hasDoc).toBe(true)
-		expect(result[1].hasResponse).toBe(true)
 		expect(result[1].target).toBe('A')
 		expect(result[2].target).toBe('A')
 	})
@@ -344,20 +342,20 @@ test.describe('Fetch Events', () => {
 		expect(await getDocumentId(page)).toBe(docId)
 	})
 
-	test('fetch-errored fires on source element on network error', async ({ page }) => {
+	test('fetch-error fires on source element on network error', async ({ page }) => {
 		await page.goto('/')
 
 		const events = page.evaluate(() => {
 			const link = document.querySelector('a[href="/fixtures/two.html"]')
 			const events = []
-			link.addEventListener('hop:fetch-errored', (e) => {
-				events.push({ type: 'fetch-errored', url: e.detail.options.to.href, hasError: !!e.detail.error, target: e.target.tagName })
+			link.addEventListener('hop:fetch-error', (e) => {
+				events.push({ type: 'fetch-error', url: e.detail.options.to.href, hasError: !!e.detail.error, target: e.target.tagName })
 			})
-			link.addEventListener('hop:fetch-done', (e) => {
-				events.push({ type: 'fetch-done', url: e.detail.options.to.href, target: e.target.tagName })
+			link.addEventListener('hop:fetch-end', (e) => {
+				events.push({ type: 'fetch-end', url: e.detail.options.to.href, target: e.target.tagName })
 			})
 			return new Promise(resolve => {
-				document.addEventListener('hop:fetch-done', () => resolve(events), { once: true })
+				document.addEventListener('hop:fetch-end', () => resolve(events), { once: true })
 			})
 		})
 
@@ -367,11 +365,188 @@ test.describe('Fetch Events', () => {
 		await page.waitForTimeout(500)
 
 		const result = await events
-		expect(result.map(e => e.type)).toEqual(['fetch-errored', 'fetch-done'])
+		expect(result.map(e => e.type)).toEqual(['fetch-error', 'fetch-end'])
 		expect(result[0].hasError).toBe(true)
 		expect(result[0].url).toContain('/fixtures/two.html')
 		expect(result[0].target).toBe('A')
 		expect(result[1].target).toBe('A')
+	})
+})
+
+test.describe('Intercept Events', () => {
+	test('before-intercept fires with options detail', async ({ page }) => {
+		await page.goto('/')
+		const detail = page.evaluate(() => {
+			return new Promise(resolve => {
+				document.addEventListener('hop:before-intercept', (e) => {
+					resolve({
+						hasOptions: !!e.detail.options,
+						method: e.detail.options.method,
+						url: e.detail.options.to.href,
+						hasSourceElement: !!e.detail.options.sourceElement
+					})
+				}, { once: true })
+			})
+		})
+
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+
+		const result = await detail
+		expect(result.hasOptions).toBe(true)
+		expect(result.method).toBe('GET')
+		expect(result.url).toContain('/fixtures/two.html')
+		expect(result.hasSourceElement).toBe(true)
+	})
+
+	test('canceling before-intercept falls back to standard navigation', async ({ page }) => {
+		await page.goto('/')
+		const docId = await markDocument(page)
+
+		await page.evaluate(() => {
+			document.addEventListener('hop:before-intercept', (e) => {
+				e.preventDefault()
+			})
+		})
+
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+		// Full page load - new document
+		expect(await getDocumentId(page)).not.toBe(docId)
+	})
+})
+
+test.describe('Swap Events', () => {
+	test('before-swap fires before swap and is cancelable', async ({ page }) => {
+		await page.goto('/')
+		const docId = await markDocument(page)
+
+		const events = page.evaluate(() => {
+			const events = []
+			document.addEventListener('hop:before-swap', (e) => {
+				events.push({
+					type: 'before-swap',
+					hasOptions: !!e.detail.options,
+					titleBeforeSwap: document.title
+				})
+			})
+			document.addEventListener('hop:after-swap', (e) => {
+				events.push({
+					type: 'after-swap',
+					hasOptions: !!e.detail.options,
+					titleAfterSwap: document.title
+				})
+			})
+			return new Promise(resolve => {
+				document.addEventListener('hop:load', () => resolve(events), { once: true })
+			})
+		})
+
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+
+		const result = await events
+		expect(result.map(e => e.type)).toEqual(['before-swap', 'after-swap'])
+		expect(result[0].hasOptions).toBe(true)
+		expect(result[0].titleBeforeSwap).toBe('Test Hub')
+		expect(result[1].hasOptions).toBe(true)
+		expect(result[1].titleAfterSwap).toBe('Two')
+	})
+
+	test('canceling before-swap prevents the swap', async ({ page }) => {
+		await page.goto('/')
+		const docId = await markDocument(page)
+
+		await page.evaluate(() => {
+			document.addEventListener('hop:before-swap', (e) => {
+				e.preventDefault()
+			})
+		})
+
+		await page.click('a[href="/fixtures/two.html"]')
+		await page.waitForTimeout(500)
+		// Swap was prevented so title stays
+		await expect(page).toHaveTitle('Test Hub')
+		expect(await getDocumentId(page)).toBe(docId)
+	})
+
+	test('after-transition fires after view transition finishes', async ({ page }) => {
+		await page.goto('/')
+
+		const eventFired = page.evaluate(() => {
+			return new Promise(resolve => {
+				document.addEventListener('hop:after-transition', (e) => {
+					resolve({ hasOptions: !!e.detail.options })
+				}, { once: true })
+			})
+		})
+
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+
+		const result = await eventFired
+		expect(result.hasOptions).toBe(true)
+	})
+})
+
+test.describe('Lifecycle Event Order', () => {
+	test('full navigation fires events in correct order', async ({ page }) => {
+		await page.goto('/')
+
+		const events = page.evaluate(() => {
+			const events = []
+			const link = document.querySelector('a[href="/fixtures/two.html"]')
+			document.addEventListener('hop:before-intercept', () => events.push('before-intercept'))
+			link.addEventListener('hop:before-fetch', () => events.push('before-fetch'))
+			link.addEventListener('hop:fetch-load', () => events.push('fetch-load'))
+			link.addEventListener('hop:fetch-end', () => events.push('fetch-end'))
+			document.addEventListener('hop:before-swap', () => events.push('before-swap'))
+			document.addEventListener('hop:after-swap', () => events.push('after-swap'))
+			return new Promise(resolve => {
+				document.addEventListener('hop:load', () => {
+					events.push('load')
+					resolve(events)
+				}, { once: true })
+			})
+		})
+
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+
+		const result = await events
+		expect(result).toEqual([
+			'before-intercept',
+			'before-fetch',
+			'fetch-load',
+			'fetch-end',
+			'before-swap',
+			'after-swap',
+			'load'
+		])
+	})
+
+	test('hop:load fires with options detail', async ({ page }) => {
+		await page.goto('/')
+
+		const detail = page.evaluate(() => {
+			return new Promise(resolve => {
+				document.addEventListener('hop:load', (e) => {
+					resolve({
+						hasOptions: !!e.detail.options,
+						method: e.detail.options.method,
+						url: e.detail.options.to.href
+					})
+				}, { once: true })
+			})
+		})
+
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+
+		const result = await detail
+		expect(result.hasOptions).toBe(true)
+		expect(result.method).toBe('GET')
+		expect(result.url).toContain('/fixtures/two.html')
 	})
 })
 

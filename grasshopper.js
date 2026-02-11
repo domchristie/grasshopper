@@ -35,7 +35,7 @@ function start() {
 			ev.downloadRequest ||
 			isHashChange(ev) ||
 			!enabled(sourceElement) ||
-			!send(sourceElement, 'before-intercept')
+			!send(sourceElement, 'before-intercept', { detail: { options }, cancelable: true})
 		) return
 
 		if (!nativePrecommit && ev.navigationType !== 'traverse') {
@@ -84,15 +84,20 @@ function start() {
 				if (canFallback(response, ev) && trackedElementsChanged(doc))
 					return navigation.reload({ info: { hop: false } })
 
-				viewTransition = startViewTransition(ev, () => swap(doc, ev))
+				viewTransition = await startViewTransition(ev, async () => {
+					if (!await sendInterceptable(sourceElement, 'before-swap', { detail: { options }, cancelable: true })) return
+					await swap(doc, ev)
+					send(sourceElement, 'after-swap', { detail: { options } })
+				}, options)
 
 				viewTransition.updateCallbackDone.finally(async () => {
 					await runScripts()
-					send(document, 'loaded')
+					send(sourceElement, 'load', { detail: { options } })
 					announce()
 				})
 
 				viewTransition.finished.finally(() => {
+					send(sourceElement, 'after-transition', { detail: { options } })
 					resetViewTransition()
 				})
 
@@ -108,8 +113,10 @@ addEventListener('DOMContentLoaded', start)
 
 async function fetchHTML(options) {
 	try {
-		if (!await sendInterceptable(options.sourceElement, 'before-fetch', { options })) return
 		options.signal = abortController === null ? null : (abortController || options.navEvent).signal
+
+		if (!await sendInterceptable(options.sourceElement, 'before-fetch', { detail: { options }, cancelable: true })) return
+
 		const response = await fetch(options.to.href, options)
 		const contentType = response.headers.get('content-type')
 		const mediaType = contentType.split(';')[0].trim()
@@ -138,13 +145,13 @@ async function fetchHTML(options) {
 
 		const links = preloadStyles(doc)
 		links.length && (await Promise.all(links)) // todo: signal.aborted
-		send(options.sourceElement, 'fetched', { options, response, doc })
+		send(options.sourceElement, 'fetch-load', { detail: { options } })
 		return { response, doc }
 	} catch(error) {
-		send(options.sourceElement, 'fetch-errored', { options, error })
+		send(options.sourceElement, 'fetch-error', { detail: { options, error } })
 		return { error }
 	} finally {
-		send(options.sourceElement, 'fetch-done', { options })
+		send(options.sourceElement, 'fetch-end', { detail: { options } })
 	}
 }
 
@@ -166,8 +173,12 @@ function preloadStyles(doc) {
 		})
 }
 
-function startViewTransition(navEvent, update) {
-	if (document.startViewTransition && !navEvent.hasUAVisualTransition) {
+async function startViewTransition(navEvent, update, options = {}) {
+	if (
+		document.startViewTransition &&
+		!navEvent.hasUAVisualTransition &&
+		await sendInterceptable(options.sourceElement, 'before-transition', { detail: { options }, cancelable: true })
+	) {
 		viewTransition = document.startViewTransition(update)
 	} else {
 		update()
@@ -333,17 +344,19 @@ function announce() {
 }
 
 // Utils
-const createEvent = (type, detail) =>
-	new CustomEvent("hop:" + type, { detail, cancelable: true, bubbles: true, composed: true })
+const createEvent = (type, options = {}) =>
+	new CustomEvent("hop:" + type, { cancelable: false, bubbles: true, composed: true, ...options })
 
-const send = (el, type, detail = {}) =>
-	(el || document).dispatchEvent(createEvent(type, detail))
+const target = (el) => el?.isConnected ? el : document
 
-async function sendInterceptable(el, type, detail = {}) {
-	let ev = createEvent(type, detail)
+const send = (el, type, options = {}) =>
+	target(el).dispatchEvent(createEvent(type, options))
+
+async function sendInterceptable(el, type, options = {}) {
+	let ev = createEvent(type, options)
 	let intercept = () => Promise.resolve(true)
 	ev.intercept = (callback) => intercept = callback
-	return (el || document).dispatchEvent(ev) && await intercept()
+	return target(el).dispatchEvent(ev) && await intercept()
 }
 
 const resetViewTransition = () => viewTransition = {
