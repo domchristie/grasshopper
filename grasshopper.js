@@ -18,7 +18,7 @@ function start() {
 		abortController?.abort()
 		const to = new URL(ev.destination.url)
 		let { doc, response, sourceElement } = ev.info?.hop || {}
-		sourceElement = sourceElement ?? (ev.sourceElement || undefined)
+		sourceElement = sourceElement ?? ev.sourceElement
 
 		if (
 			!ev.canIntercept ||
