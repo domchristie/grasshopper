@@ -96,24 +96,24 @@ This is useful for filtering, sorting, or making changes in-place.
 
 ## Events
 
-Events are dispatched on the navigation's source element (typically a link or form submitter) if it exists, or the `document`. 
+Events are dispatched on the navigation's source element (typically a link or form submitter) if it exists in the DOM, or the `document`.
 
 Events with an `options` detail contain: `sourceElement`, `to` (URL), `method`, `body`, `signal`, and `navEvent`.
 
-| Event | Target | Cancelable | Interceptable | Detail |
-|-------|--------|:----------:|:-------------:|--------|
-| `hop:before-intercept` | source element | Yes | | `{ options }` |
-| `hop:before-fetch` | source element | Yes | Yes | `{ options }` |
-| `hop:fetch-load` | source element | | | `{ options, response, doc }` |
-| `hop:fetch-error` | source element | | | `{ options, error }` |
-| `hop:fetch-end` | source element | | | `{ options }` |
-| `hop:before-transition` | source element | Yes | Yes | `{ options }` |
-| `hop:before-swap` | source element | Yes | Yes | `{ options }` |
-| `hop:after-swap` | document | | | `{ options }` |
-| `hop:before-scroll` | document | | Yes | |
-| `hop:scrolled` | document | | | |
-| `hop:load` | document | | | `{ options }` |
-| `hop:after-transition` | document | | | `{ options }` |
+| Event | Cancelable | Interceptable | Detail |
+|-------|--------|:----------:|--------|
+| `hop:before-intercept` | Yes | | `{ options }` |
+| `hop:before-fetch` | Yes | Yes | `{ options }` |
+| `hop:fetch-load` | | | `{ options }` |
+| `hop:fetch-error` | | | `{ options, error }` |
+| `hop:fetch-end` | | | `{ options }` |
+| `hop:before-transition` | Yes | Yes | `{ options }` |
+| `hop:before-swap` | Yes | Yes | `{ options }` |
+| `hop:after-swap` | | | `{ options }` |
+| `hop:before-scroll` | | Yes | |
+| `hop:scrolled` | | | |
+| `hop:load` | | | `{ options }` |
+| `hop:after-transition` | | | `{ options }` |
 
 ### Cancelable events
 
