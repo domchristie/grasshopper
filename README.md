@@ -153,8 +153,7 @@ Fired after the page has been fetched and new stylesheets have been preloaded:
 
 ```js
 document.addEventListener('hop:fetch-load', (e) => {
-  const { response, doc } = e.detail
-  console.log('Fetched', response.url, doc.title)
+  console.log('Fetched', e.detail.options.doc.title)
 })
 ```
 
@@ -188,7 +187,7 @@ Fired before the DOM swap. Cancel to prevent the swap entirely (the document con
 
 ### `hop:after-swap`
 
-Fired on `document` immediately after the DOM swap.
+Fired immediately after the DOM swap.
 
 ### `hop:before-scroll`
 
@@ -200,11 +199,11 @@ Fired after scroll position is restored i.e. scrolled to top, scrolled to a frag
 
 ### `hop:load`
 
-Fired on `document` after the swap is complete and new scripts have executed.
+Fired after the swap is complete and new scripts have executed.
 
 ### `hop:after-transition`
 
-Fired on `document` after the view transition finishes.
+Fired after the view transition finishes.
 
 ## How It Works
 
