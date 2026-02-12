@@ -98,22 +98,20 @@ This is useful for filtering, sorting, or making changes in-place.
 
 Events are dispatched on the navigation's source element (typically a link or form submitter) if it exists in the DOM, or the `document`.
 
-Events with an `options` detail contain: `id` (UUID), `sourceElement`, `to` (URL), `method`, `body`, `headers`, `signal`, and `navEvent`.
+All events include an [`options`](#options-object) object in their `detail`.
 
-| Event | Cancelable | Interceptable | Detail |
-|-------|--------|:----------:|--------|
-| `hop:before-intercept` | Yes | | `{ options }` |
-| `hop:before-fetch` | Yes | Yes | `{ options }` |
-| `hop:fetch-load` | | | `{ options }` |
-| `hop:fetch-error` | | | `{ options, error }` |
-| `hop:fetch-end` | | | `{ options }` |
-| `hop:before-transition` | Yes | Yes | `{ options }` |
-| `hop:before-swap` | Yes | Yes | `{ options }` |
-| `hop:after-swap` | | | `{ options }` |
-| `hop:before-scroll` | | Yes | |
-| `hop:scrolled` | | | |
-| `hop:load` | | | `{ options }` |
-| `hop:after-transition` | | | `{ options }` |
+- [`hop:before-intercept`](#hopbefore-intercept) — Cancelable.
+- [`hop:before-fetch`](#hopbefore-fetch) — Cancelable, interceptable.
+- [`hop:fetch-load`](#hopfetch-load)
+- [`hop:fetch-error`](#hopfetch-error)
+- [`hop:fetch-end`](#hopfetch-end)
+- [`hop:before-transition`](#hopbefore-transition) — Cancelable, interceptable.
+- [`hop:before-swap`](#hopbefore-swap) — Cancelable, interceptable.
+- [`hop:after-swap`](#hopafter-swap)
+- [`hop:before-scroll`](#hopbefore-scroll) — Cancelable, interceptable.
+- [`hop:after-scroll`](#hopafter-scroll)
+- [`hop:load`](#hopload)
+- [`hop:after-transition`](#hopafter-transition)
 
 ### Cancelable events
 
@@ -191,9 +189,9 @@ Fired immediately after the DOM swap.
 
 ### `hop:before-scroll`
 
-Fired before scroll position is set i.e. scrolled to top, scrolled to a fragment, or restored after a traversal.
+Fired before scroll position is set i.e. scrolled to top, scrolled to a fragment, or restored after a traversal. Cancel to prevent scrolling entirely.
 
-### `hop:scrolled`
+### `hop:after-scroll`
 
 Fired after scroll position is restored i.e. scrolled to top, scrolled to a fragment, or restored after a traversal.
 
@@ -204,6 +202,22 @@ Fired after the swap is complete and new scripts have executed.
 ### `hop:after-transition`
 
 Fired after the view transition finishes.
+
+## Options Object
+
+The `options` object is available via `e.detail.options` in all events. It is also passed as the second argument to `fetch()`, so properties like `method`, `headers`, `body`, and `signal` are used directly as fetch options. It contains:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `string` | A UUID identifying the navigation. |
+| `sourceElement` | `Element \| undefined` | The element that initiated the navigation (e.g. a link or form submitter). |
+| `from` | `URL` | The URL of the page at the time of navigation. |
+| `to` | `URL` | The destination URL. |
+| `method` | `string` | `"GET"` or `"POST"`. |
+| `body` | `FormData \| undefined` | The form data, if the navigation was triggered by a form submission. |
+| `headers` | `object` | Request headers. Includes `x-hop-id`. |
+| `signal` | `AbortSignal \| null` | The abort signal for the fetch request. Available from `hop:before-fetch` onwards. |
+| `navEvent` | `NavigateEvent` | The underlying [NavigateEvent](https://developer.mozilla.org/en-US/docs/Web/API/NavigateEvent). |
 
 ## Navigation ID
 
