@@ -572,3 +572,140 @@ test.describe('Slow responses', () => {
 		expect(await getDocumentId(page)).toBe(docId)
 	})
 })
+
+test.describe('Navigation ID', () => {
+	const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+	test('options.id is a valid UUID', async ({ page }) => {
+		await page.goto('/')
+		const id = page.evaluate(() => {
+			return new Promise(resolve => {
+				document.addEventListener('hop:before-intercept', (e) => {
+					resolve(e.detail.options.id)
+				}, { once: true })
+			})
+		})
+
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+		expect(await id).toMatch(UUID_RE)
+	})
+
+	test('data-hop-id is set on source element during navigation', async ({ page }) => {
+		await page.goto('/')
+		const result = page.evaluate(() => {
+			return new Promise(resolve => {
+				document.addEventListener('hop:before-intercept', (e) => {
+					const el = e.detail.options.sourceElement
+					resolve({
+						attr: el.getAttribute('data-hop-id'),
+						id: e.detail.options.id
+					})
+				}, { once: true })
+			})
+		})
+
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+
+		const { attr, id } = await result
+		expect(attr).toBe(id)
+		expect(attr).toMatch(UUID_RE)
+	})
+
+	test('data-hop-id is removed after navigation completes', async ({ page }) => {
+		await page.goto('/')
+		const done = page.evaluate(() => {
+			return new Promise(resolve => {
+				document.addEventListener('hop:after-transition', () => resolve(), { once: true })
+			})
+		})
+
+		await page.click('a[href="/fixtures/two.html"]')
+		await done
+		const count = await page.locator('[data-hop-id]').count()
+		expect(count).toBe(0)
+	})
+
+	test('x-hop-id header is sent with fetch request', async ({ page }) => {
+		await page.goto('/')
+		const id = page.evaluate(() => {
+			return new Promise(resolve => {
+				document.addEventListener('hop:before-intercept', (e) => {
+					resolve(e.detail.options.id)
+				}, { once: true })
+			})
+		})
+
+		const request = page.waitForRequest(req =>
+			req.url().includes('/fixtures/two.html') && req.headers()['x-hop-id']
+		)
+
+		await page.click('a[href="/fixtures/two.html"]')
+		const req = await request
+		expect(req.headers()['x-hop-id']).toBe(await id)
+	})
+
+	test('each navigation gets a unique ID', async ({ page }) => {
+		await page.goto('/')
+		const ids = page.evaluate(() => {
+			const ids = []
+			document.addEventListener('hop:before-intercept', (e) => {
+				ids.push(e.detail.options.id)
+			})
+			return new Promise(resolve => {
+				let count = 0
+				document.addEventListener('hop:load', () => {
+					if (++count === 2) resolve(ids)
+				})
+			})
+		})
+
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+		await page.click('a[href="/"]')
+		await expect(page).toHaveTitle('Test Hub')
+
+		const result = await ids
+		expect(result).toHaveLength(2)
+		expect(result[0]).toMatch(UUID_RE)
+		expect(result[1]).toMatch(UUID_RE)
+		expect(result[0]).not.toBe(result[1])
+	})
+
+	test('ID is preserved across redirects', async ({ page }) => {
+		await page.goto('/')
+		const result = page.evaluate(() => {
+			let interceptId
+			document.addEventListener('hop:before-intercept', (e) => {
+				interceptId = interceptId || e.detail.options.id
+			})
+			return new Promise(resolve => {
+				document.addEventListener('hop:load', (e) => {
+					resolve({ interceptId, loadId: e.detail.options.id })
+				}, { once: true })
+			})
+		})
+
+		await page.click('a[href="/redirect/301"]')
+		await expect(page.locator('h1')).toHaveText('Redirect Target')
+
+		const { interceptId, loadId } = await result
+		expect(interceptId).toMatch(UUID_RE)
+		expect(loadId).toBe(interceptId)
+	})
+
+	test('abort cleans up data-hop-id from previous source element', async ({ page }) => {
+		await page.goto('/')
+		// Start slow navigation
+		page.click('a[href="/slow"]')
+		await page.waitForTimeout(200)
+		// Abort by navigating elsewhere
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+
+		// Only the current (or no) element should have data-hop-id
+		const count = await page.locator('[data-hop-id]').count()
+		expect(count).toBeLessThanOrEqual(1)
+	})
+})

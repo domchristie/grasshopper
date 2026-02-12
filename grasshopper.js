@@ -3,6 +3,7 @@ const DIRECTION_ATTR = 'data-hop-direction'
 const PERSIST_ATTR = 'data-hop-persist'
 const DISABLED_ATTR = 'data-hop'
 const TRACK_ATTR = 'data-hop-track'
+const ID_ATTR = 'data-hop-id'
 const nativePrecommit = !!self.NavigationPrecommitController
 
 let started = false
@@ -16,17 +17,24 @@ function start() {
 
 	navigation.addEventListener('navigate', async function (ev) {
 		abortController?.abort()
+		document.querySelector(`[${ID_ATTR}]`)?.removeAttribute(ID_ATTR)
+
 		const to = new URL(ev.destination.url)
-		let { doc, response, sourceElement } = ev.info?.hop || {}
+		let { doc, response, sourceElement, id } = ev.info?.hop || {}
 		sourceElement = sourceElement ?? ev.sourceElement
+		id = id || crypto.randomUUID()
 
 		const options = {
+			id,
 			sourceElement,
 			to,
 			method: ev.formData ? 'POST' : 'GET',
 			body: ev.formData,
+			headers: { 'x-hop-id': id },
 			navEvent: ev
 		}
+
+		sourceElement?.setAttribute(ID_ATTR, id)
 
 		if (
 			!ev.canIntercept ||
@@ -65,7 +73,7 @@ function start() {
 			)
 				return redirect(controller,
 					redirectTo || ev.destination.url, {
-					history, info: { ...ev.info, hop: { doc, response, sourceElement } }
+					history, info: { ...ev.info, hop: { doc, response, sourceElement, id } }
 				})
 		}
 
@@ -97,6 +105,7 @@ function start() {
 				})
 
 				viewTransition.finished.finally(() => {
+					sourceElement?.removeAttribute(ID_ATTR)
 					send(sourceElement, 'after-transition', { detail: { options } })
 					resetViewTransition()
 				})

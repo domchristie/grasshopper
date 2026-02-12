@@ -98,7 +98,7 @@ This is useful for filtering, sorting, or making changes in-place.
 
 Events are dispatched on the navigation's source element (typically a link or form submitter) if it exists in the DOM, or the `document`.
 
-Events with an `options` detail contain: `sourceElement`, `to` (URL), `method`, `body`, `signal`, and `navEvent`.
+Events with an `options` detail contain: `id` (UUID), `sourceElement`, `to` (URL), `method`, `body`, `headers`, `signal`, and `navEvent`.
 
 | Event | Cancelable | Interceptable | Detail |
 |-------|--------|:----------:|--------|
@@ -205,6 +205,14 @@ Fired after the swap is complete and new scripts have executed.
 
 Fired after the view transition finishes.
 
+## Navigation ID
+
+Each navigation is assigned a UUID. The ID is:
+
+- Available as `options.id` in all event details
+- Set as a `data-hop-id` attribute on the source element during navigation (removed after the transition completes)
+- Sent as an `x-hop-id` header with the fetch request
+
 ## How It Works
 
 1. **Intercept**: Listens to the Navigation API's `navigate` event. Checks if navigation should be handled (same-origin, not opted-out, both pages have `hop` meta tag).
@@ -231,6 +239,7 @@ Requires the [Navigation API](https://caniuse.com/mdn-api_navigation).
 | `data-hop` | `"false"` | Disables fetch navigation on this element and descendants. |
 | `data-hop-type` | `"replace"` | Uses `replaceState` instead of `pushState`. |
 | `data-hop-track` | `"reload"` | Triggers full reload if element changes between pages. |
+| `data-hop-id` | UUID | Set automatically on the source element during navigation. |
 
 ## Meta Tags Reference
 
