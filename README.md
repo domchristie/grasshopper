@@ -127,15 +127,7 @@ document.addEventListener('hop:before-intercept', (e) => {
 
 ### Interceptable events
 
-**Interceptable** events expose an `e.intercept(callback)` method. The callback is an async function that runs before the default behavior proceeds:
-
-```js
-document.addEventListener('hop:before-scroll', (e) => {
-  e.intercept(async () => {
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  })
-})
-```
+**Interceptable** events expose an `e.intercept(callback)` method. The callback is an async function that runs before the default behavior proceeds.
 
 ### `hop:before-intercept`
 
@@ -147,33 +139,15 @@ Fired before the page is fetched. Cancel to skip the fetch entirely.
 
 ### `hop:fetch-load`
 
-Fired after the page has been fetched and new stylesheets have been preloaded:
-
-```js
-document.addEventListener('hop:fetch-load', (e) => {
-  console.log('Fetched', e.detail.options.doc.title)
-})
-```
+Fired after the page has been fetched and new stylesheets have been preloaded.
 
 ### `hop:fetch-error`
 
-Fired when the fetch throws an error (e.g. network failure):
-
-```js
-document.addEventListener('hop:fetch-error', (e) => {
-  console.error('Fetch failed', e.detail.error)
-})
-```
+Fired when the fetch throws an error (e.g. network failure). Includes the error object in `e.detail.error`.
 
 ### `hop:fetch-end`
 
-Fired after every fetch attempt, whether it succeeded or failed. Useful for cleanup like hiding loading indicators:
-
-```js
-document.addEventListener('hop:fetch-end', () => {
-  hideLoadingSpinner()
-})
-```
+Fired after every fetch attempt, whether it succeeded or failed.
 
 ### `hop:before-transition`
 
