@@ -258,7 +258,7 @@ test.describe('Scroll Behavior', () => {
 			let scrollCalled = false
 			const handler = () => { scrollCalled = true }
 			addEventListener('scroll', handler)
-			document.addEventListener('hop:scrolled', () => {
+			document.addEventListener('hop:load', () => {
 				removeEventListener('scroll', handler)
 				resolve(scrollCalled)
 			}, { once: true })
@@ -489,6 +489,106 @@ test.describe('Swap Events', () => {
 	})
 })
 
+test.describe('Scroll Events', () => {
+	test('before-scroll fires with options detail', async ({ page }) => {
+		await page.goto('/')
+
+		const detail = page.evaluate(() => {
+			return new Promise(resolve => {
+				document.addEventListener('hop:before-scroll', (e) => {
+					resolve({
+						hasOptions: !!e.detail.options,
+						method: e.detail.options.method,
+						url: e.detail.options.to.href,
+						hasFrom: !!e.detail.options.from,
+						fromUrl: e.detail.options.from.href
+					})
+				}, { once: true })
+			})
+		})
+
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+
+		const result = await detail
+		expect(result.hasOptions).toBe(true)
+		expect(result.method).toBe('GET')
+		expect(result.url).toContain('/fixtures/two.html')
+		expect(result.hasFrom).toBe(true)
+		expect(result.fromUrl).toContain('/')
+	})
+
+	test('after-scroll fires with options detail', async ({ page }) => {
+		await page.goto('/')
+
+		const detail = page.evaluate(() => {
+			return new Promise(resolve => {
+				document.addEventListener('hop:after-scroll', (e) => {
+					resolve({
+						hasOptions: !!e.detail.options,
+						method: e.detail.options.method,
+						url: e.detail.options.to.href,
+						hasFrom: !!e.detail.options.from,
+						fromUrl: e.detail.options.from.href
+					})
+				}, { once: true })
+			})
+		})
+
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+
+		const result = await detail
+		expect(result.hasOptions).toBe(true)
+		expect(result.method).toBe('GET')
+		expect(result.url).toContain('/fixtures/two.html')
+		expect(result.hasFrom).toBe(true)
+		expect(result.fromUrl).toContain('/')
+	})
+
+	test('before-scroll is interceptable', async ({ page }) => {
+		await page.goto('/')
+
+		const result = page.evaluate(() => {
+			return new Promise(resolve => {
+				document.addEventListener('hop:before-scroll', (e) => {
+					e.intercept(async () => {
+						resolve({ intercepted: true, hasOptions: !!e.detail.options })
+					})
+				}, { once: true })
+			})
+		})
+
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+
+		const { intercepted, hasOptions } = await result
+		expect(intercepted).toBe(true)
+		expect(hasOptions).toBe(true)
+	})
+
+	test('canceling before-scroll prevents scrolling and after-scroll event', async ({ page }) => {
+		await page.goto('/')
+
+		const result = page.evaluate(() => {
+			let scrolledFired = false
+			document.addEventListener('hop:before-scroll', (e) => {
+				e.preventDefault()
+			})
+			document.addEventListener('hop:after-scroll', () => {
+				scrolledFired = true
+			})
+			return new Promise(resolve => {
+				document.addEventListener('hop:load', () => resolve(scrolledFired), { once: true })
+			})
+		})
+
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+		expect(await result).toBe(false)
+	})
+})
+
 test.describe('Lifecycle Event Order', () => {
 	test('full navigation fires events in correct order', async ({ page }) => {
 		await page.goto('/')
@@ -502,6 +602,8 @@ test.describe('Lifecycle Event Order', () => {
 			link.addEventListener('hop:fetch-end', () => events.push('fetch-end'))
 			document.addEventListener('hop:before-swap', () => events.push('before-swap'))
 			document.addEventListener('hop:after-swap', () => events.push('after-swap'))
+			document.addEventListener('hop:before-scroll', () => events.push('before-scroll'))
+			document.addEventListener('hop:after-scroll', () => events.push('after-scroll'))
 			return new Promise(resolve => {
 				document.addEventListener('hop:load', () => {
 					events.push('load')
@@ -521,6 +623,8 @@ test.describe('Lifecycle Event Order', () => {
 			'fetch-end',
 			'before-swap',
 			'after-swap',
+			'before-scroll',
+			'after-scroll',
 			'load'
 		])
 	})

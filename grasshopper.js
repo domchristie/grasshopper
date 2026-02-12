@@ -19,6 +19,7 @@ function start() {
 		abortController?.abort()
 		document.querySelector(`[${ID_ATTR}]`)?.removeAttribute(ID_ATTR)
 
+		const from = new URL(location.href)
 		const to = new URL(ev.destination.url)
 		let { doc, response, sourceElement, id } = ev.info?.hop || {}
 		sourceElement = sourceElement ?? ev.sourceElement
@@ -27,6 +28,7 @@ function start() {
 		const options = {
 			id,
 			sourceElement,
+			from,
 			to,
 			method: ev.formData ? 'POST' : 'GET',
 			body: ev.formData,
@@ -38,7 +40,7 @@ function start() {
 
 		if (
 			!ev.canIntercept ||
-			to.origin !== location.origin || // WebKit fix
+			to.origin !== from.origin || // WebKit 26.2 fix
 			ev.info?.hop === false ||
 			ev.downloadRequest ||
 			isHashChange(ev) ||
@@ -93,9 +95,8 @@ function start() {
 					return navigation.reload({ info: { hop: false } })
 
 				viewTransition = await startViewTransition(ev, async () => {
-					if (!await sendInterceptable(sourceElement, 'before-swap', { detail: { options }, cancelable: true })) return
-					await swap(doc, ev)
-					send(sourceElement, 'after-swap', { detail: { options } })
+					await swap(doc, options)
+					await scroll(options)
 				}, options)
 
 				viewTransition.updateCallbackDone.finally(async () => {
@@ -195,13 +196,14 @@ async function startViewTransition(navEvent, update, options = {}) {
 	return viewTransition
 }
 
-async function swap(doc, ev) {
+async function swap(doc, options) {
+	if (!await sendInterceptable(options.sourceElement, 'before-swap', { detail: { options }, cancelable: true })) return
 	swapRootAttributes(doc)
 	swapHeadElements(doc)
 	withRestoredFocus(() => {
 		swapBodyElement(doc.body)
 	})
-	await scroll(ev)
+	send(options.sourceElement, 'after-swap', { detail: { options } })
 }
 
 function swapRootAttributes(doc) {
@@ -278,24 +280,20 @@ function attachShadowRoots(root) {
 	})
 }
 
-async function scroll(navEvent) {
-	await sendInterceptable(document, 'before-scroll')
+async function scroll(options) {
+	if (!await sendInterceptable(options.sourceElement, 'before-scroll', { detail: { options }, cancelable: true })) return
 
-	const sourceElement = navEvent.info?.hop?.sourceElement ?? navEvent.sourceElement
 	const isRefresh = (
-		new URL(navigation.transition.from.url).pathname === new URL(location.href).pathname
-			&& !!sourceElement?.closest('[data-hop-type="replace"]')
+		options.from.pathname === new URL(location.href).pathname
+			&& !!options.sourceElement?.closest('[data-hop-type="replace"]')
 	)
-	const preserveScroll = isRefresh &&
-		document.querySelector('meta[name="hop-refresh-scroll"][content="preserve"]')
+	if (isRefresh && document.querySelector('meta[name="hop-refresh-scroll"][content="preserve"]')) return
 
-	if (!preserveScroll) {
-		if (['push', 'replace'].includes(navEvent.navigationType))
-			scrollTo(0, 0) // Fix when navigating from a scrolled page in Chrome/WebKit
-		navEvent.scroll()
-	}
+	// Fix when navigating from a scrolled page in Chrome/WebKit
+	if (['push', 'replace'].includes(options.navEvent.navigationType)) scrollTo(0, 0)
+	options.navEvent.scroll()
 
-	send(document, 'scrolled')
+	send(options.sourceElement, 'after-scroll', { detail: { options } })
 }
 
 function runScripts() {
