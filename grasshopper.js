@@ -367,7 +367,7 @@ async function sendInterceptable(el, type, options = {}) {
 	let ev = createEvent(type, options)
 	let intercept = () => Promise.resolve(true)
 	ev.intercept = (callback) => intercept = callback
-	return target(el).dispatchEvent(ev) && await intercept()
+	return target(el).dispatchEvent(ev) && (await intercept(), !ev.defaultPrevented)
 }
 
 const resetViewTransition = () => viewTransition = {

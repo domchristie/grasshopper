@@ -470,6 +470,27 @@ test.describe('Swap Events', () => {
 		expect(await getDocumentId(page)).toBe(docId)
 	})
 
+	test('calling preventDefault inside intercept callback prevents the swap', async ({ page }) => {
+		await page.goto('/')
+		const docId = await markDocument(page)
+
+		await page.evaluate(() => {
+			document.addEventListener('hop:before-swap', (e) => {
+				e.intercept(async () => {
+					// Return value is truthy, but preventDefault should still cancel
+					e.preventDefault()
+					return true
+				})
+			})
+		})
+
+		await page.click('a[href="/fixtures/two.html"]')
+		await page.waitForTimeout(500)
+		// Swap was prevented so title stays
+		await expect(page).toHaveTitle('Test Hub')
+		expect(await getDocumentId(page)).toBe(docId)
+	})
+
 	test('after-transition fires after view transition finishes', async ({ page }) => {
 		await page.goto('/')
 
