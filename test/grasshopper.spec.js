@@ -292,13 +292,16 @@ test.describe('Scroll Behavior', () => {
 })
 
 test.describe('Fetch Events', () => {
-	test('successful navigation fires before-fetch, fetch-load, and fetch-end on the source element', async ({ page }) => {
+	test('successful navigation fires before-fetch, fetch-start, fetch-load, and fetch-end on the source element', async ({ page }) => {
 		await page.goto('/')
 		const events = page.evaluate(() => {
 			const link = document.querySelector('a[href="/fixtures/two.html"]')
 			const events = []
 			link.addEventListener('hop:before-fetch', (e) => {
 				events.push({ type: 'before-fetch', url: e.detail.options.to.href, target: e.target.tagName })
+			})
+			link.addEventListener('hop:fetch-start', (e) => {
+				events.push({ type: 'fetch-start', url: e.detail.options.to.href, target: e.target.tagName })
 			})
 			link.addEventListener('hop:fetch-load', (e) => {
 				events.push({ type: 'fetch-load', url: e.detail.options.to.href, target: e.target.tagName })
@@ -318,11 +321,12 @@ test.describe('Fetch Events', () => {
 		await expect(page).toHaveTitle('Two')
 
 		const result = await events
-		expect(result.map(e => e.type)).toEqual(['before-fetch', 'fetch-load', 'fetch-end'])
+		expect(result.map(e => e.type)).toEqual(['before-fetch', 'fetch-start', 'fetch-load', 'fetch-end'])
 		expect(result[0].url).toContain('/fixtures/two.html')
 		expect(result[0].target).toBe('A')
 		expect(result[1].target).toBe('A')
 		expect(result[2].target).toBe('A')
+		expect(result[3].target).toBe('A')
 	})
 
 	test('before-fetch is interceptable and prevents navigation', async ({ page }) => {
@@ -619,6 +623,7 @@ test.describe('Lifecycle Event Order', () => {
 			const link = document.querySelector('a[href="/fixtures/two.html"]')
 			document.addEventListener('hop:before-intercept', () => events.push('before-intercept'))
 			link.addEventListener('hop:before-fetch', () => events.push('before-fetch'))
+			link.addEventListener('hop:fetch-start', () => events.push('fetch-start'))
 			link.addEventListener('hop:fetch-load', () => events.push('fetch-load'))
 			link.addEventListener('hop:fetch-end', () => events.push('fetch-end'))
 			document.addEventListener('hop:before-swap', () => events.push('before-swap'))
@@ -640,6 +645,7 @@ test.describe('Lifecycle Event Order', () => {
 		expect(result).toEqual([
 			'before-intercept',
 			'before-fetch',
+			'fetch-start',
 			'fetch-load',
 			'fetch-end',
 			'before-swap',

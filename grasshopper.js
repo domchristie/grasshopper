@@ -126,6 +126,7 @@ async function fetchHTML(options) {
 		options.signal = abortController === null ? null : (abortController || options.navEvent).signal
 
 		if (!await sendInterceptable(options.sourceElement, 'before-fetch', { detail: { options }, cancelable: true })) return
+		send(options.sourceElement, 'fetch-start', { detail: { options } })
 
 		const response = await fetch(options.to.href, options)
 		const contentType = response.headers.get('content-type')

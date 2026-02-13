@@ -102,6 +102,7 @@ All events include an [`options`](#options-object) object in their `detail`.
 
 - [`hop:before-intercept`](#hopbefore-intercept) — Cancelable.
 - [`hop:before-fetch`](#hopbefore-fetch) — Cancelable, interceptable.
+- [`hop:fetch-start`](#hopfetch-start)
 - [`hop:fetch-load`](#hopfetch-load)
 - [`hop:fetch-error`](#hopfetch-error)
 - [`hop:fetch-end`](#hopfetch-end)
@@ -136,6 +137,10 @@ Fired before navigation is intercepted. Cancel to fall back to standard browser 
 ### `hop:before-fetch`
 
 Fired before the page is fetched. Cancel to skip the fetch entirely.
+
+### `hop:fetch-start`
+
+Fired immediately before the fetch request is made (after `hop:before-fetch` has resolved).
 
 ### `hop:fetch-load`
 
