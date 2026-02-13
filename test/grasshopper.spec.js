@@ -654,6 +654,22 @@ test.describe('Lifecycle Event Order', () => {
 	})
 })
 
+test.describe('Nonce Attributes', () => {
+	test('scripts with nonce are not re-executed on navigation', async ({ page }) => {
+		await page.goto('/fixtures/nonce.html')
+		const docId = await markDocument(page)
+		// Initial page load runs the inline nonce script once
+		expect(await page.evaluate(() => document.__nonceScriptCount)).toBe(1)
+
+		await page.click('a[href="/fixtures/nonce-two.html"]')
+		await expect(page).toHaveTitle('Nonce Two')
+		expect(await getDocumentId(page)).toBe(docId)
+
+		// The shared inline nonce script should NOT have run again
+		expect(await page.evaluate(() => document.__nonceScriptCount)).toBe(1)
+	})
+})
+
 test.describe('Slow responses', () => {
 	test('slow response keeps same document', async ({ page }) => {
 		await page.goto('/')

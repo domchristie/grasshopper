@@ -169,6 +169,9 @@ function preloadStyles(doc) {
 	const oldEls = [...document.querySelectorAll('head link[rel=stylesheet]')]
 	const newEls = [...doc.querySelectorAll('head link[rel=stylesheet]')]
 
+	for (const el of oldEls) el.removeAttribute('nonce')
+	for (const el of newEls) el.removeAttribute('nonce')
+
 	return newEls
 		.filter(newEl => !oldEls.some(oldEl => oldEl.isEqualNode(newEl))) // todo: consider persistent stylesheets
 		.map((el) => {
@@ -220,7 +223,8 @@ function swapHeadElements(doc) {
 	const newEls = [...doc.head.children]
 
 	for (const oldEl of oldEls) {
-		const newEl = newEls.find(newEl => newEl.isEqualNode(oldEl))
+		oldEl.removeAttribute('nonce')
+		const newEl = newEls.find(newEl => (newEl.removeAttribute('nonce'), newEl.isEqualNode(oldEl)))
 		newEl ? newEl.remove() : oldEl.remove()
 	}
 	flagNewScripts(doc.head.getElementsByTagName('script'))
