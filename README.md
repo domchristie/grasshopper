@@ -100,35 +100,23 @@ Events are dispatched on the navigation's source element (typically a link or fo
 
 All events include an [`options`](#options-object) object in their `detail`.
 
-- [`hop:before-intercept`](#hopbefore-intercept) — Cancelable.
-- [`hop:before-fetch`](#hopbefore-fetch) — Cancelable, interceptable.
+- [`hop:before-intercept`](#hopbefore-intercept)
+- [`hop:before-fetch`](#hopbefore-fetch)
 - [`hop:fetch-start`](#hopfetch-start)
 - [`hop:fetch-load`](#hopfetch-load)
 - [`hop:fetch-error`](#hopfetch-error)
 - [`hop:fetch-end`](#hopfetch-end)
-- [`hop:before-transition`](#hopbefore-transition) — Cancelable, interceptable.
-- [`hop:before-swap`](#hopbefore-swap) — Cancelable, interceptable.
+- [`hop:before-transition`](#hopbefore-transition)
+- [`hop:before-swap`](#hopbefore-swap)
 - [`hop:after-swap`](#hopafter-swap)
-- [`hop:before-scroll`](#hopbefore-scroll) — Cancelable, interceptable.
+- [`hop:before-scroll`](#hopbefore-scroll)
 - [`hop:after-scroll`](#hopafter-scroll)
 - [`hop:load`](#hopload)
 - [`hop:after-transition`](#hopafter-transition)
 
-### Cancelable events
-
-**Cancelable** events can be prevented with `e.preventDefault()`. This skips the associated step:
-
-```js
-document.addEventListener('hop:before-intercept', (e) => {
-  if (someCondition) {
-    e.preventDefault() // Fall back to standard navigation
-  }
-})
-```
-
 ### Interceptable events
 
-**Interceptable** events expose an `e.intercept(callback)` method. The callback is an async function that runs before the default behavior proceeds.
+**Interceptable** events expose an `e.intercept(callback)` method. The callback is an async function that runs before the default behavior proceeds. All `before-*` events are cancelable and interceptable, apart from `hop:before-intercept`, which is only cancelable.
 
 ### `hop:before-intercept`
 
@@ -136,7 +124,7 @@ Fired before navigation is intercepted. Cancel to fall back to standard browser 
 
 ### `hop:before-fetch`
 
-Fired before the page is fetched. Cancel to skip the fetch entirely.
+Fired before the page is fetched. Cancel to skip the fetch entirely and abort the navigation.
 
 ### `hop:fetch-start`
 
