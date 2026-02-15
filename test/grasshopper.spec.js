@@ -870,7 +870,7 @@ test.describe('Navigation ID', () => {
 		await page.goto('/')
 		const result = page.evaluate(() => {
 			return new Promise(resolve => {
-				document.addEventListener('hop:before-intercept', (e) => {
+				document.addEventListener('hop:before-fetch', (e) => {
 					const el = e.detail.options.sourceElement
 					resolve({
 						attr: el.getAttribute('data-hop-id'),
