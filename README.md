@@ -184,7 +184,18 @@ The `options` object is available via `e.detail.options` in all events. It is al
 | `body` | `FormData \| undefined` | The form data, if the navigation was triggered by a form submission. |
 | `headers` | `object` | Request headers. Includes `x-hop-id`. |
 | `signal` | `AbortSignal \| null` | The abort signal for the fetch request. Available from `hop:before-fetch` onwards. |
+| `direction` | `string` | The navigation direction: `"forward"`, `"back"`, or `"none"`. |
 | `navEvent` | `NavigateEvent` | The underlying [NavigateEvent](https://developer.mozilla.org/en-US/docs/Web/API/NavigateEvent). |
+
+## Direction
+
+Each navigation is assigned a direction based on its type:
+
+- **`"forward"`** — push, replace, or forward traversal
+- **`"back"`** — back traversal
+- **`"none"`** — reload, or any navigation to the same pathname
+
+The direction is available as `options.direction` in all events, and set as a `data-hop-direction` attribute on `<html>` during navigation (removed after the transition completes or at the start of the next navigation).
 
 ## Navigation ID
 
@@ -221,6 +232,7 @@ Requires the [Navigation API](https://caniuse.com/mdn-api_navigation).
 | `data-hop-type` | `"replace"` | Uses `replaceState` instead of `pushState`. |
 | `data-hop-track` | `"reload"` | Triggers full reload if element changes between pages. |
 | `data-hop-id` | UUID | Set automatically on the source element during navigation. |
+| `data-hop-direction` | `"forward"`, `"back"`, `"none"` | Set automatically on `<html>` during navigation. |
 
 ## Meta Tags Reference
 

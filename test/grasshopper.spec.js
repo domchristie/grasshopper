@@ -720,6 +720,134 @@ test.describe('Slow responses', () => {
 	})
 })
 
+test.describe('Direction', () => {
+	test('push navigation has direction "forward"', async ({ page }) => {
+		await page.goto('/')
+		const direction = page.evaluate(() => {
+			return new Promise(resolve => {
+				document.addEventListener('hop:before-intercept', (e) => {
+					resolve(e.detail.options.direction)
+				}, { once: true })
+			})
+		})
+
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+		expect(await direction).toBe('forward')
+	})
+
+	test('back traversal has direction "back"', async ({ page }) => {
+		await page.goto('/')
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+
+		const direction = page.evaluate(() => {
+			return new Promise(resolve => {
+				document.addEventListener('hop:load', (e) => {
+					resolve(e.detail.options.direction)
+				}, { once: true })
+			})
+		})
+
+		await page.goBack()
+		await expect(page).toHaveTitle('Test Hub')
+		expect(await direction).toBe('back')
+	})
+
+	test('forward traversal has direction "forward"', async ({ page }) => {
+		await page.goto('/')
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+		await page.goBack()
+		await expect(page).toHaveTitle('Test Hub')
+
+		const direction = page.evaluate(() => {
+			return new Promise(resolve => {
+				document.addEventListener('hop:load', (e) => {
+					resolve(e.detail.options.direction)
+				}, { once: true })
+			})
+		})
+
+		await page.goForward()
+		await expect(page).toHaveTitle('Two')
+		expect(await direction).toBe('forward')
+	})
+
+	test('replace to self has direction "none"', async ({ page }) => {
+		await page.goto('/')
+		const direction = page.evaluate(() => {
+			return new Promise(resolve => {
+				document.addEventListener('hop:before-intercept', (e) => {
+					resolve(e.detail.options.direction)
+				}, { once: true })
+			})
+		})
+
+		await page.click('a[href="/"][data-hop-type="replace"]')
+		await expect(page).toHaveTitle('Test Hub')
+		expect(await direction).toBe('none')
+	})
+
+	test('data-hop-direction attribute is set during swap', async ({ page }) => {
+		await page.goto('/')
+		const direction = page.evaluate(() => {
+			return new Promise(resolve => {
+				document.addEventListener('hop:before-swap', () => {
+					resolve(document.documentElement.getAttribute('data-hop-direction'))
+				}, { once: true })
+			})
+		})
+
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+		expect(await direction).toBe('forward')
+	})
+
+	test('data-hop-direction attribute is removed after transition finishes', async ({ page }) => {
+		await page.goto('/')
+		const done = page.evaluate(() => {
+			return new Promise(resolve => {
+				document.addEventListener('hop:after-transition', () => resolve(), { once: true })
+			})
+		})
+
+		await page.click('a[href="/fixtures/two.html"]')
+		await done
+		const attr = await page.evaluate(() =>
+			document.documentElement.getAttribute('data-hop-direction')
+		)
+		expect(attr).toBeNull()
+	})
+
+	test('data-hop-direction attribute is removed at start of next navigation', async ({ page }) => {
+		await page.goto('/')
+		// Abort the fetch so the direction attribute stays from the first nav
+		await page.route('/fixtures/two.html', route => route.abort())
+		await page.click('a[href="/fixtures/two.html"]').catch(() => {})
+		await page.waitForTimeout(500)
+
+		// Direction should still be set since the transition never completed
+		const before = await page.evaluate(() =>
+			document.documentElement.getAttribute('data-hop-direction')
+		)
+		expect(before).toBe('forward')
+
+		// Next navigation should clear it
+		await page.unroute('/fixtures/two.html')
+		const cleared = page.evaluate(() => {
+			return new Promise(resolve => {
+				document.addEventListener('hop:before-intercept', () => {
+					resolve(document.documentElement.getAttribute('data-hop-direction'))
+				}, { once: true })
+			})
+		})
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+		expect(await cleared).toBeNull()
+	})
+})
+
 test.describe('Navigation ID', () => {
 	const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 

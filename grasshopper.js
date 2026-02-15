@@ -17,6 +17,7 @@ function start() {
 
 	navigation.addEventListener('navigate', async function (ev) {
 		abortController?.abort()
+		document.documentElement.removeAttribute(DIRECTION_ATTR)
 		document.querySelector(`[${ID_ATTR}]`)?.removeAttribute(ID_ATTR)
 
 		const from = new URL(location.href)
@@ -24,6 +25,10 @@ function start() {
 		let { doc, response, sourceElement, id } = ev.info?.hop || {}
 		sourceElement = sourceElement ?? ev.sourceElement
 		id = id || crypto.randomUUID()
+		const isSamePage = ev.navigationType === 'reload' || to.pathname === from.pathname
+		const direction = ev.navigationType === 'traverse'
+			? (ev.destination.index > navigation.currentEntry.index ? 'forward' : 'back')
+			: isSamePage ? 'none' : 'forward'
 
 		const options = {
 			id,
@@ -33,10 +38,9 @@ function start() {
 			method: ev.formData ? 'POST' : 'GET',
 			body: ev.formData,
 			headers: { 'x-hop-id': id },
-			navEvent: ev
+			navEvent: ev,
+			direction,
 		}
-
-		sourceElement?.setAttribute(ID_ATTR, id)
 
 		if (
 			!ev.canIntercept ||
@@ -47,6 +51,9 @@ function start() {
 			!enabled(sourceElement) ||
 			!send(sourceElement, 'before-intercept', { detail: { options }, cancelable: true})
 		) return
+
+		sourceElement?.setAttribute(ID_ATTR, id)
+		document.documentElement.setAttribute(DIRECTION_ATTR, direction)
 
 		if (!nativePrecommit && ev.navigationType !== 'traverse') {
 			abortController = null
@@ -106,6 +113,7 @@ function start() {
 				})
 
 				viewTransition.finished.finally(() => {
+					document.documentElement.removeAttribute(DIRECTION_ATTR)
 					sourceElement?.removeAttribute(ID_ATTR)
 					send(sourceElement, 'after-transition', { detail: { options } })
 					resetViewTransition()
