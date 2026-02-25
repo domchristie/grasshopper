@@ -984,3 +984,90 @@ test.describe('Navigation ID', () => {
 		expect(count).toBeLessThanOrEqual(1)
 	})
 })
+
+test.describe('info.hop Options', () => {
+	test('doc skips fetch and swaps provided document', async ({ page }) => {
+		await page.goto('/')
+		const docId = await markDocument(page)
+
+		const result = page.evaluate(() => {
+			const events = []
+			document.addEventListener('hop:before-fetch', () => events.push('before-fetch'))
+			document.addEventListener('hop:fetch-start', () => events.push('fetch-start'))
+			return new Promise(resolve => {
+				document.addEventListener('hop:load', () => {
+					resolve({ events, title: document.title })
+				}, { once: true })
+			})
+		})
+
+		await page.evaluate(() => {
+			const doc = new DOMParser().parseFromString(
+				'<!DOCTYPE html><html><head><title>Custom Doc</title><meta name="hop" content="true" /></head><body><h1>Custom</h1></body></html>',
+				'text/html'
+			)
+			navigation.navigate('/fixtures/two.html', {
+				info: { hop: { doc } }
+			})
+		})
+
+		const { events, title } = await result
+		expect(title).toBe('Custom Doc')
+		expect(events).toEqual([])
+		expect(await getDocumentId(page)).toBe(docId)
+	})
+
+	test('direction overrides computed direction', async ({ page }) => {
+		await page.goto('/')
+
+		const direction = page.evaluate(() => {
+			return new Promise(resolve => {
+				document.addEventListener('hop:before-swap', () => {
+					resolve({
+						attr: document.documentElement.getAttribute('data-hop-direction')
+					})
+				}, { once: true })
+			})
+		})
+
+		await page.evaluate(() => {
+			navigation.navigate('/fixtures/two.html', {
+				info: { hop: { direction: 'back' } }
+			})
+		})
+		await expect(page).toHaveTitle('Two')
+
+		const result = await direction
+		expect(result.attr).toBe('back')
+	})
+
+	test('scroll preserve bypasses scroll handling', async ({ page }) => {
+		await page.goto('/fixtures/scroll-default.html')
+		await page.evaluate(() => scrollTo(0, 100))
+		await page.waitForFunction(() => scrollY > 90)
+
+		const result = page.evaluate(() => {
+			let beforeScrollFired = false
+			let afterScrollFired = false
+			document.addEventListener('hop:before-scroll', () => { beforeScrollFired = true })
+			document.addEventListener('hop:after-scroll', () => { afterScrollFired = true })
+
+			return new Promise(resolve => {
+				document.addEventListener('hop:load', () => {
+					resolve({ beforeScrollFired, afterScrollFired })
+				}, { once: true })
+			})
+		})
+
+		await page.evaluate(() => {
+			navigation.navigate('/fixtures/scroll-target.html', {
+				info: { hop: { scroll: 'preserve' } }
+			})
+		})
+		await expect(page).toHaveTitle('Scroll Target')
+
+		const { beforeScrollFired, afterScrollFired } = await result
+		expect(beforeScrollFired).toBe(false)
+		expect(afterScrollFired).toBe(false)
+	})
+})

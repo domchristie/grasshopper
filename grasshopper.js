@@ -22,11 +22,11 @@ function start() {
 
 		const from = new URL(location.href)
 		const to = new URL(ev.destination.url)
-		let { doc, response, sourceElement, id } = ev.info?.hop || {}
+		let { doc, response, sourceElement, id, direction, scroll } = ev.info?.hop || {}
 		sourceElement = sourceElement ?? ev.sourceElement
 		id = id || crypto.randomUUID()
 		const isSamePage = ev.navigationType === 'reload' || to.pathname === from.pathname
-		const direction = ev.navigationType === 'traverse'
+		direction ||= ev.navigationType === 'traverse'
 			? (ev.destination.index > navigation.currentEntry.index ? 'forward' : 'back')
 			: isSamePage ? 'none' : 'forward'
 
@@ -40,6 +40,7 @@ function start() {
 			headers: { 'x-hop-id': id },
 			navEvent: ev,
 			direction,
+			scroll,
 		}
 
 		if (
@@ -66,15 +67,14 @@ function start() {
 		}
 
 		async function precommitHandler(controller) {
-			;({ response, doc } = await fetchHTML(options) || {})
+			if (!doc) ({ response, doc } = await fetchHTML(options) || {})
 
 			let history = (
-				(navigation.transition?.from?.url || location.href) === response.url
-					|| sourceElement?.closest('[data-hop-type="replace"]')
+				from.href === response?.url || sourceElement?.closest('[data-hop-type="replace"]')
 					? 'replace'
 					: ev.navigationType
 			)
-			let redirectTo = response.redirected && response.url
+			let redirectTo = response?.redirected && response?.url
 
 			if (nativePrecommit
 				? redirectTo || history !== ev.navigationType
@@ -82,7 +82,7 @@ function start() {
 			)
 				return redirect(controller,
 					redirectTo || ev.destination.url, {
-					history, info: { ...ev.info, hop: { doc, response, sourceElement, id } }
+					history, info: { ...ev.info, hop: { doc, response, sourceElement, id, direction, scroll } }
 				})
 		}
 
@@ -103,7 +103,7 @@ function start() {
 
 				viewTransition = await startViewTransition(ev, async () => {
 					await swap(doc, options)
-					await scroll(options)
+					await doScroll(options)
 				}, options)
 
 				viewTransition.updateCallbackDone.finally(async () => {
@@ -293,7 +293,8 @@ function attachShadowRoots(root) {
 	})
 }
 
-async function scroll(options) {
+async function doScroll(options) {
+	if (options.scroll === 'preserve') return
 	if (!await sendInterceptable(options.sourceElement, 'before-scroll', { detail: { options }, cancelable: true })) return
 
 	const isRefresh = (
