@@ -67,7 +67,11 @@ function start() {
 		}
 
 		async function precommitHandler(controller) {
-			if (!doc) ({ response, doc } = await fetchHTML(options) || {})
+			if (!doc) {
+				const result = await fetchHTML(options)
+				if (!result) return
+				({ response, doc } = result)
+			}
 
 			let history = (
 				from.href === response?.url || sourceElement?.closest('[data-hop-type="replace"]')
