@@ -207,7 +207,7 @@ async function startViewTransition(navEvent, update, options = {}) {
 	) {
 		viewTransition = document.startViewTransition(update)
 	} else {
-		update()
+		await update()
 	}
 	return viewTransition
 }
