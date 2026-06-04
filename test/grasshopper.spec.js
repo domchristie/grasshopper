@@ -109,6 +109,8 @@ test.describe('Forms', () => {
 		const docId = await markDocument(page)
 		await page.click('input[type="submit"]')
 		await expect(page.locator('h1')).toHaveText('Form POST Result')
+		await expect(page.locator('ul')).toContainText('name')
+		await expect(page.locator('ul')).toContainText('message')
 		expect(await getDocumentId(page)).toBe(docId)
 	})
 })
