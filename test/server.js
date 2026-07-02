@@ -84,8 +84,7 @@ const server = createServer(async (req, res) => {
     if (pathname === '/form') {
       let params
       if (req.method === 'POST') {
-        const body = await collectBody(req)
-        params = new URLSearchParams(body)
+        params = await parseBody(req)
       } else {
         params = url.searchParams
       }
@@ -96,14 +95,14 @@ const server = createServer(async (req, res) => {
 
     // Track form handler (POST with changed tracked element)
     if (pathname === '/track-form' && req.method === 'POST') {
-      await collectBody(req)
+      await parseBody(req)
       log(req, 200, 'track-form', 'POST')
       return serveFile(res, join(ROOT, 'fixtures', 'track-changed.html'))
     }
 
     // Track form redirect handler (POST that redirects to page with changed tracked element)
     if (pathname === '/track-form-redirect' && req.method === 'POST') {
-      await collectBody(req)
+      await parseBody(req)
       log(req, 302, 'track-form-redirect', '/fixtures/track-changed.html')
       res.writeHead(302, { Location: '/fixtures/track-changed.html' })
       return res.end()
@@ -118,7 +117,7 @@ const server = createServer(async (req, res) => {
 
     // POST returns page without hop meta (tests canFallback)
     if (pathname === '/form-no-hop' && req.method === 'POST') {
-      await collectBody(req)
+      await parseBody(req)
       log(req, 200, 'form-no-hop', 'POST')
       return serveFile(res, join(ROOT, 'fixtures', 'no-hop.html'))
     }
@@ -169,13 +168,36 @@ function notFound(res) {
   res.end('Not Found')
 }
 
-function collectBody(req) {
+function parseBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = []
     req.on('data', c => chunks.push(c))
-    req.on('end', () => resolve(Buffer.concat(chunks).toString()))
+    req.on('end', () => {
+      const buf = Buffer.concat(chunks)
+      const contentType = req.headers['content-type'] || ''
+      const boundary = contentType.match(/boundary=([^\s;]+)/)?.[1]
+      if (boundary) {
+        resolve(parseMultipart(buf, boundary))
+      } else {
+        resolve(new URLSearchParams(buf.toString()))
+      }
+    })
     req.on('error', reject)
   })
+}
+
+function parseMultipart(buf, boundary) {
+  const params = new URLSearchParams()
+  for (const part of buf.toString().split(`--${boundary}`)) {
+    if (!part.startsWith('\r\n')) continue
+    const headerEnd = part.indexOf('\r\n\r\n')
+    if (headerEnd === -1) continue
+    const headers = part.slice(2, headerEnd)
+    const value = part.slice(headerEnd + 4).replace(/\r\n$/, '')
+    const nameMatch = headers.match(/name="([^"]+)"/)
+    if (nameMatch) params.append(nameMatch[1], value)
+  }
+  return params
 }
 
 function esc(s) {
