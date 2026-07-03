@@ -113,7 +113,6 @@ function start() {
 				viewTransition.updateCallbackDone.finally(async () => {
 					await runScripts()
 					send(sourceElement, 'load', { detail: { options } })
-					announce()
 				})
 
 				viewTransition.finished.finally(() => {
@@ -348,22 +347,6 @@ function runScripts() {
 		script.replaceWith(newScript)
 	}
 	return wait
-}
-
-function announce() {
-	const div = document.createElement('div')
-	div.setAttribute('aria-live', 'assertive')
-	div.setAttribute('aria-atomic', 'true')
-	Object.assign(div.style, { position: 'absolute', left: '0', top: '0', clip: 'rect(0 0 0 0)', clipPath: 'inset(50%)', overflow: 'hidden', whiteSpace: 'nowrap', width: '1px', height: '1px' })
-
-	document.body.append(div)
-	setTimeout(
-		() => {
-			const title = document.title || document.querySelector('h1')?.textContent || location.pathname
-			div.textContent = title
-		},
-		60 // Delay to ensure screen readers notice the change
-	)
 }
 
 // Utils
