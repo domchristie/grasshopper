@@ -93,6 +93,34 @@ test.describe('Fragments', () => {
 		await expect(page).toHaveTitle('Fragments')
 		expect(await getDocumentId(page)).toBe(docId)
 	})
+
+	test('target fragment matches :target selector after navigation', async ({ page }) => {
+		await page.goto('/')
+		await page.click('a[href="/fixtures/fragment.html#target"]')
+		await expect(page).toHaveURL(/fragment\.html#target/)
+		// toHaveURL resolves as soon as the Navigation API commits the URL, which happens
+		// before swap()/doScroll() apply :target — so assert via the auto-retrying
+		// toHaveCSS first, then the one-shot :target check is safe to read.
+		await expect(page.locator('#target')).toHaveCSS('background-color', 'rgb(255, 255, 224)')
+		const isTarget = await page.evaluate(() => document.querySelector('#target:target') !== null)
+		expect(isTarget).toBe(true)
+	})
+
+	test('target fragment still matches :target selector after back and forward', async ({ page }) => {
+		await page.goto('/')
+		await page.click('a[href="/fixtures/fragment.html#target"]')
+		await expect(page).toHaveURL(/fragment\.html#target/)
+		await expect(page.locator('#target')).toHaveCSS('background-color', 'rgb(255, 255, 224)')
+
+		await page.goBack()
+		await expect(page).toHaveURL('http://localhost:3000/')
+
+		await page.goForward()
+		await expect(page).toHaveURL(/fragment\.html#target/)
+		await expect(page.locator('#target')).toHaveCSS('background-color', 'rgb(255, 255, 224)')
+		const isTarget = await page.evaluate(() => document.querySelector('#target:target') !== null)
+		expect(isTarget).toBe(true)
+	})
 })
 
 test.describe('Forms', () => {
