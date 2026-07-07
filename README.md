@@ -136,7 +136,7 @@ Fired after the page has been fetched and new stylesheets have been preloaded.
 
 ### `hop:fetch-error`
 
-Fired when the fetch throws an error (e.g. network failure). Includes the error object in `e.detail.error`.
+Fired when the fetch throws an error (e.g. network failure). Includes the error object in `e.detail.error`. The navigation is then aborted — the URL and page content remain unchanged, and a `navigateerror` event fires on `window.navigation`, which can be used to display an error message. (In browsers without precommit support, a failed fetch during a back/forward traversal cannot un-commit the URL: `navigateerror` still fires, but the address bar may show the destination URL.)
 
 ### `hop:fetch-end`
 

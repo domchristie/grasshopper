@@ -5,6 +5,7 @@ const DISABLED_ATTR = 'data-hop'
 const TRACK_ATTR = 'data-hop-track'
 const ID_ATTR = 'data-hop-id'
 const nativePrecommit = !!self.NavigationPrecommitController
+class FetchAbort extends Error {}
 
 let started = false
 let parser
@@ -61,17 +62,13 @@ function start() {
 			if (!doc) {
 				ev.preventDefault()
 				abortController = new AbortController()
-				await precommitHandler(null)
+				try { await precommitHandler(null) } catch { /* aborted or failed before commit; already prevented */ }
 				return
 			}
 		}
 
 		async function precommitHandler(controller) {
-			if (!doc) {
-				const result = await fetchHTML(options)
-				if (!result) return
-				({ response, doc } = result)
-			}
+			if (!doc) ({ response, doc } = await fetchHTML(options))
 
 			let history = (
 				from.href === response?.url || sourceElement?.closest('[data-hop-type="replace"]')
@@ -136,22 +133,23 @@ async function fetchHTML(options) {
 	try {
 		options.signal = abortController === null ? null : (abortController || options.navEvent).signal
 
-		if (!await sendInterceptable(options.sourceElement, 'before-fetch', { detail: { options }, cancelable: true })) return
+		if (!await sendInterceptable(options.sourceElement, 'before-fetch', { detail: { options }, cancelable: true }))
+			throw new FetchAbort()
 		send(options.sourceElement, 'fetch-start', { detail: { options } })
 
 		const response = await fetch(options.to.href, options)
 		const contentType = response.headers.get('content-type')
-		const mediaType = contentType.split(';')[0].trim()
+		const mediaType = contentType?.split(';')[0].trim()
 
 		if (canFallback(response, options.navEvent) && !supportsMediaType(mediaType)) {
 			fallback(response.url)
-			return
+			throw new FetchAbort()
 		}
 		if (response.redirected) {
 			const redirectedTo = new URL(response.url)
 			if (redirectedTo.origin !== options.to.origin) {
 				fallback(response.url)
-				return
+				throw new FetchAbort()
 			}
 		}
 
@@ -162,7 +160,7 @@ async function fetchHTML(options) {
 
 		if (canFallback(response, options.navEvent) && !enabled(doc)) {
 			fallback(response.url)
-			return
+			throw new FetchAbort()
 		}
 
 		const links = preloadStyles(doc)
@@ -170,8 +168,8 @@ async function fetchHTML(options) {
 		send(options.sourceElement, 'fetch-load', { detail: { options } })
 		return { response, doc }
 	} catch(error) {
-		send(options.sourceElement, 'fetch-error', { detail: { options, error } })
-		return { error }
+		if (!(error instanceof FetchAbort)) send(options.sourceElement, 'fetch-error', { detail: { options, error } })
+		throw error
 	} finally {
 		send(options.sourceElement, 'fetch-end', { detail: { options } })
 	}
