@@ -332,8 +332,12 @@ test.describe('Fetch Events', () => {
 	})
 
 	test('before-fetch is interceptable and prevents navigation', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
 		await page.goto('/')
 		const docId = await markDocument(page)
+		const url = page.url()
 
 		await page.evaluate(() => {
 			document.addEventListener('hop:before-fetch', (e) => {
@@ -345,11 +349,18 @@ test.describe('Fetch Events', () => {
 		// Should stay on the same page since before-fetch was cancelled
 		await page.waitForTimeout(500)
 		await expect(page).toHaveTitle('Test Hub')
+		expect(page.url()).toBe(url)
 		expect(await getDocumentId(page)).toBe(docId)
+		expect(pageErrors).toEqual([])
 	})
 
 	test('fetch-error fires on source element on network error', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
 		await page.goto('/')
+		const docId = await markDocument(page)
+		const url = page.url()
 
 		const events = page.evaluate(() => {
 			const link = document.querySelector('a[href="/fixtures/two.html"]')
@@ -376,6 +387,31 @@ test.describe('Fetch Events', () => {
 		expect(result[0].url).toContain('/fixtures/two.html')
 		expect(result[0].target).toBe('A')
 		expect(result[1].target).toBe('A')
+		await expect(page).toHaveTitle('Test Hub')
+		expect(page.url()).toBe(url)
+		expect(await getDocumentId(page)).toBe(docId)
+		expect(pageErrors).toEqual([])
+	})
+
+	test('response with no Content-Type header falls back to full-page load', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.goto('/')
+		const docId = await markDocument(page)
+
+		await page.route('/fixtures/two.html', route => route.fulfill({
+			status: 200,
+			headers: {},
+			body: '<!DOCTYPE html><html><head><title>Two</title></head><body><h1>Two</h1></body></html>',
+		}))
+
+		await page.click('a[href="/fixtures/two.html"]')
+		await page.waitForURL(/fixtures\/two\.html/)
+		await expect(page).toHaveTitle('Two')
+		// Full page load - new document
+		expect(await getDocumentId(page)).not.toBe(docId)
+		expect(pageErrors).toEqual([])
 	})
 })
 
