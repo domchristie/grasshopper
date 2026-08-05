@@ -1137,3 +1137,80 @@ test.describe('info.hop Options', () => {
 		expect(afterScrollFired).toBe(false)
 	})
 })
+
+test.describe('Traversal Without History-Action Activation', () => {
+	// A `traverse` (back/forward) NavigateEvent is only `cancelable` when the browser
+	// grants "history-action activation" - notably absent right after a programmatic
+	// navigation with no intervening user gesture, such as our own tracked-element
+	// reload (see `Trackable Elements`). intercept() throws if given a precommitHandler
+	// on a non-cancelable event, so grasshopper must omit it in that case.
+	//
+	// Playwright's goBack() always presents the browser's real internal cancelable flag
+	// as true, so it can't reproduce the browser throwing. Instead we shadow the
+	// JS-visible `cancelable` getter for traverse events and record what grasshopper
+	// actually passes to intercept() - this exercises the exact guard in grasshopper.js
+	// (`canPrecommit`) that decides whether to include a precommitHandler.
+	async function forceNonCancelableTraversal(page) {
+		await page.addInitScript(() => {
+			const desc = Object.getOwnPropertyDescriptor(Event.prototype, 'cancelable')
+			Object.defineProperty(Event.prototype, 'cancelable', {
+				...desc,
+				get() {
+					if (this.type === 'navigate' && this.navigationType === 'traverse') return false
+					return desc.get.call(this)
+				}
+			})
+			window.__interceptCalls = []
+			const origIntercept = NavigateEvent.prototype.intercept
+			NavigateEvent.prototype.intercept = function (options) {
+				window.__interceptCalls.push({
+					type: this.navigationType,
+					cancelable: this.cancelable,
+					hasPrecommitHandler: !!options?.precommitHandler,
+				})
+				return origIntercept.call(this, options)
+			}
+		})
+	}
+
+	test('back traversal omits precommitHandler when the navigate event is non-cancelable', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await forceNonCancelableTraversal(page)
+		await page.goto('/')
+		const docId = await markDocument(page)
+
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+
+		await page.goBack()
+		await expect(page).toHaveTitle('Test Hub')
+
+		expect(await getDocumentId(page)).toBe(docId) // traversal still stayed same-document
+		expect(pageErrors).toEqual([])
+
+		const calls = await page.evaluate(() => window.__interceptCalls)
+		const traverseCall = calls.find(c => c.type === 'traverse')
+		expect(traverseCall).toBeTruthy()
+		expect(traverseCall.cancelable).toBe(false)
+		expect(traverseCall.hasPrecommitHandler).toBe(false)
+	})
+
+	test('tracked-element reload followed by back traversal does not throw', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await forceNonCancelableTraversal(page)
+		await page.goto('/fixtures/track.html')
+
+		await page.click('a[href="/fixtures/track-changed.html"]')
+		await expect(page).toHaveTitle('Track Changed')
+
+		await page.goBack()
+		await expect(page).toHaveTitle('Track')
+		await expect(page).toHaveURL(/track\.html$/)
+
+		expect(pageErrors).toEqual([])
+	})
+})
