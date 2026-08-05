@@ -23,6 +23,7 @@ function start() {
 
 		const from = new URL(location.href)
 		const to = new URL(ev.destination.url)
+		const canPrecommit = nativePrecommit && ev.cancelable
 		let { doc, response, sourceElement, id, direction, scroll } = ev.info?.hop || {}
 		sourceElement = sourceElement ?? ev.sourceElement
 		id = id || crypto.randomUUID()
@@ -57,7 +58,7 @@ function start() {
 		sourceElement?.setAttribute(ID_ATTR, id)
 		document.documentElement.setAttribute(DIRECTION_ATTR, direction)
 
-		if (!nativePrecommit && ev.navigationType !== 'traverse') {
+		if (!canPrecommit && ev.navigationType !== 'traverse') {
 			abortController = null
 			if (!doc) {
 				ev.preventDefault()
@@ -77,7 +78,7 @@ function start() {
 			)
 			let redirectTo = response?.redirected && response?.url
 
-			if (nativePrecommit
+			if (canPrecommit
 				? redirectTo || history !== ev.navigationType
 				: ev.navigationType !== 'traverse'
 			)
@@ -88,10 +89,10 @@ function start() {
 		}
 
 		ev.intercept({
-			precommitHandler,
+			...(canPrecommit && { precommitHandler }),
 
 			async handler() {
-				if (!nativePrecommit && ev.navigationType === 'traverse')
+				if (!canPrecommit && ev.navigationType === 'traverse')
 					await precommitHandler(null)
 
 				try {
