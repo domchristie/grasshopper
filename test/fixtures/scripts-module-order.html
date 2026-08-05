@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Module Order Target</title>
+	<link rel="icon" href="data:,">
+	<script src="/grasshopper.js"></script>
+	<meta name="hop" content="true" />
+</head>
+<body>
+	<h1>Module Order Target</h1>
+	<script type="module">document.__order = document.__order || []; document.__order.push('inline-module')</script>
+	<script type="module" src="/fixtures/scripts-external-module.js"></script>
+</body>
+</html>

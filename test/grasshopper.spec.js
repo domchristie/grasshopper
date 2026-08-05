@@ -763,6 +763,85 @@ test.describe('Nonce Attributes', () => {
 	})
 })
 
+test.describe('runScripts', () => {
+	test('new scripts execute after swap', async ({ page }) => {
+		await page.goto('/fixtures/scripts-source.html')
+		await page.click('a[href="/fixtures/scripts-target.html"]')
+		await expect(page).toHaveTitle('Scripts Target')
+		const order = await page.evaluate(() => document.__order)
+		expect(order).toContain('inline-classic')
+	})
+
+	test('data-hop-eval="false" scripts do not execute', async ({ page }) => {
+		await page.goto('/fixtures/scripts-source.html')
+		await page.click('a[href="/fixtures/scripts-target.html"]')
+		await expect(page).toHaveTitle('Scripts Target')
+		const order = await page.evaluate(() => document.__order)
+		expect(order).not.toContain('should-not-run-eval-false')
+	})
+
+	test('scripts with an unsupported type are not executed', async ({ page }) => {
+		await page.goto('/fixtures/scripts-source.html')
+		await page.click('a[href="/fixtures/scripts-target.html"]')
+		await expect(page).toHaveTitle('Scripts Target')
+		const order = await page.evaluate(() => document.__order)
+		expect(order).not.toContain('should-not-run-json')
+	})
+
+	test('external classic scripts finish running before hop:load fires', async ({ page }) => {
+		await page.goto('/fixtures/scripts-source.html')
+		const orderAtLoad = page.evaluate(() => {
+			return new Promise(resolve => {
+				document.addEventListener('hop:load', () => resolve(document.__order), { once: true })
+			})
+		})
+
+		await page.click('a[href="/fixtures/scripts-target.html"]')
+		await expect(page).toHaveTitle('Scripts Target')
+
+		expect(await orderAtLoad).toContain('external-classic')
+	})
+
+	test('a lone inline module script still executes eventually', async ({ page }) => {
+		await page.goto('/fixtures/scripts-source.html')
+		await page.click('a[href="/fixtures/scripts-lone-module.html"]')
+		await expect(page).toHaveTitle('Lone Module Target')
+
+		await expect.poll(() => page.evaluate(() => document.__order)).toContain('inline-module')
+	})
+
+	// Per the comment on runScripts(), inline module scripts can't be awaited via onload,
+	// so a lone inline module is followed by a synthetic sync-point module script whose
+	// onload is chained into the returned wait promise, so hop:load waits for it too.
+	test('hop:load waits for a lone inline module script', async ({ page }) => {
+		await page.goto('/fixtures/scripts-source.html')
+		const orderAtLoad = page.evaluate(() => {
+			return new Promise(resolve => {
+				document.addEventListener('hop:load', () => resolve(document.__order || []), { once: true })
+			})
+		})
+
+		await page.click('a[href="/fixtures/scripts-lone-module.html"]')
+		await expect(page).toHaveTitle('Lone Module Target')
+
+		expect(await orderAtLoad).toContain('inline-module')
+	})
+
+	test('an inline module runs before a following external module, and hop:load waits for both', async ({ page }) => {
+		await page.goto('/fixtures/scripts-source.html')
+		const orderAtLoad = page.evaluate(() => {
+			return new Promise(resolve => {
+				document.addEventListener('hop:load', () => resolve(document.__order), { once: true })
+			})
+		})
+
+		await page.click('a[href="/fixtures/scripts-module-order.html"]')
+		await expect(page).toHaveTitle('Module Order Target')
+
+		expect(await orderAtLoad).toEqual(['inline-module', 'external-module'])
+	})
+})
+
 test.describe('Slow responses', () => {
 	test('slow response keeps same document', async ({ page }) => {
 		await page.goto('/')

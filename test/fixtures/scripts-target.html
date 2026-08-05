@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Scripts Target</title>
+	<link rel="icon" href="data:,">
+	<script src="/grasshopper.js"></script>
+	<meta name="hop" content="true" />
+</head>
+<body>
+	<h1>Scripts Target</h1>
+	<script>document.__order = document.__order || []; document.__order.push('inline-classic')</script>
+	<script data-hop-eval="false">document.__order = document.__order || []; document.__order.push('should-not-run-eval-false')</script>
+	<script type="application/ld+json">document.__order = document.__order || []; document.__order.push('should-not-run-json')</script>
+	<script src="/fixtures/scripts-external.js"></script>
+</body>
+</html>

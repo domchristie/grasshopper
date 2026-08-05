@@ -323,11 +323,15 @@ function runScripts() {
 		script.getAttribute('type') === 'module' &&
 			(needsWaitForInlineModuleScript = script.getAttribute('src') === null)
 	}
-	needsWaitForInlineModuleScript &&
+	if (needsWaitForInlineModuleScript) {
 		document.body.insertAdjacentHTML(
 			'beforeend',
 			`<script type="module" src="data:application/javascript,"/>`,
 		)
+		const syncScript = document.body.lastElementChild
+		syncScript.__new = true
+		runnable.push(syncScript)
+	}
 
 	for (const script of runnable) {
 		const type = script.getAttribute('type')
