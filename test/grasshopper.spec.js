@@ -1293,3 +1293,30 @@ test.describe('Traversal Without History-Action Activation', () => {
 		expect(pageErrors).toEqual([])
 	})
 })
+
+test.describe('Public API', () => {
+	test('stop() prevents navigation interception', async ({ page }) => {
+		await page.goto('/')
+		const docId = await markDocument(page)
+		await page.evaluate(() => {
+			const { stop } = window.grasshopper
+			stop()
+		})
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+		expect(await getDocumentId(page)).not.toBe(docId)
+	})
+
+	test('start() re-enables navigation interception after stop()', async ({ page }) => {
+		await page.goto('/')
+		await page.evaluate(() => {
+			const { stop, start } = window.grasshopper
+			stop()
+			start()
+		})
+		const docId = await markDocument(page)
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+		expect(await getDocumentId(page)).toBe(docId)
+	})
+})
