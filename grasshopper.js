@@ -50,7 +50,7 @@ function start() {
 			to.origin !== from.origin || // WebKit 26.2 fix
 			ev.info?.hop === false ||
 			ev.downloadRequest ||
-			isHashChange(ev) ||
+			isSamePageHash(from, to, sourceElement) ||
 			!enabled(sourceElement) ||
 			!send(sourceElement, 'before-intercept', { detail: { options }, cancelable: true})
 		) return
@@ -383,9 +383,11 @@ function enabled(el) {
 	}
 }
 
-const isHashChange = (navEvent) =>
-	(navEvent.hashChange && !navEvent.sourceElement) ||
-	(navEvent.hashChange && navEvent.sourceElement.matches('a[href^="#"]'))
+function isSamePageHash(from, to, sourceElement) {
+	if (sourceElement && !sourceElement.getAttribute('href')?.startsWith('#')) return false
+	if (!from.href.includes('#') && !to.href.includes('#')) return false
+	return from.pathname === to.pathname && from.search === to.search
+}
 
 const supportsMediaType = (type) => MEDIA_TYPES.includes(type)
 
