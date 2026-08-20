@@ -71,6 +71,25 @@ test.describe('Persistence', () => {
 		expect(await getDocumentId(page)).toBe(docId)
 		await expect(page.locator('#p')).toHaveText('Hub persistent element')
 	})
+
+	test('data-hop-persist element without an id is skipped without breaking later persistence', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.goto('/fixtures/persist-noid-a.html')
+		const docId = await markDocument(page)
+
+		await page.click('a[href="/fixtures/persist-noid-b.html"]')
+		await expect(page).toHaveTitle('Persist No Id B')
+		expect(await getDocumentId(page)).toBe(docId)
+
+		// The id-less persist element can't be matched in the new document, so it's
+		// simply skipped - the new document's content is left in place, no crash.
+		await expect(page.locator('p:not(#after-noid)')).toHaveText('No-id persistent element B')
+		// The later element, which does have an id, still persists correctly.
+		await expect(page.locator('#after-noid')).toHaveText('After no-id A')
+		expect(pageErrors).toEqual([])
+	})
 })
 
 test.describe('Fragments', () => {

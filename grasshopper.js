@@ -271,7 +271,7 @@ function swapBodyElement(newBody) {
 	oldBody.replaceWith(newBody) // resets scroll position
 
 	for (const el of oldBody.querySelectorAll(`[${PERSIST_ATTR}]`)) {
-		newBody.querySelector(`#${el.id}[${PERSIST_ATTR}]`)?.replaceWith(el)
+		el.id && newBody.querySelector(`#${el.id}[${PERSIST_ATTR}]`)?.replaceWith(el)
 	}
 	flagNewScripts(newBody.getElementsByTagName('script'))
 	attachShadowRoots(newBody)
