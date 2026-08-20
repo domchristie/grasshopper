@@ -115,6 +115,15 @@ const server = createServer(async (req, res) => {
       return res.end(JSON.stringify({ type: 'json', message: 'This is not HTML' }))
     }
 
+    // Unsupported content type on a POST response (can't fall back - see
+    // UnsupportedMediaTypeError in grasshopper.js)
+    if (pathname === '/form-unsupported' && req.method === 'POST') {
+      await parseBody(req)
+      log(req, 200, 'json', 'application/json')
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      return res.end(JSON.stringify({ type: 'json', message: 'This is not HTML' }))
+    }
+
     // POST returns page without hop meta (tests canFallback)
     if (pathname === '/form-no-hop' && req.method === 'POST') {
       await parseBody(req)
