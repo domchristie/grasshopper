@@ -142,6 +142,74 @@ test.describe('Fragments', () => {
 	})
 })
 
+test.describe('isSamePageHash', () => {
+	// Note: URL#hash is blank for a trailing "/#", so these cases can't be
+	// told apart by hash alone - the check is same pathname + search, not
+	// the browser's own hashChange flag (which is false when the fragment
+	// is dropped entirely, e.g. "/#foo" -> "/", causing a real reload).
+	const samePageCases = [
+		['/', '/#'],
+		['/#', '/'],
+		['/', '/#foo'],
+		['/#foo', '/'],
+		['/#foo', '/#bar'],
+		['/#foo', '#foo'],
+		['/#', '/#'],
+		['/#', '/#foo'],
+		['/#foo', '/#'],
+	]
+
+	// Survives full reloads (unlike a page.evaluate listener), since some
+	// same-page-hash cases fall back to a real browser navigation.
+	async function watchIntercept(page) {
+		let intercepted = false
+		await page.exposeFunction('__reportIntercept', () => { intercepted = true })
+		await page.addInitScript(() => {
+			document.addEventListener('hop:before-intercept', () => window.__reportIntercept())
+		})
+		return () => intercepted
+	}
+
+	for (const [from, to] of samePageCases) {
+		test(`${from} -> ${to} is not intercepted`, async ({ page }) => {
+			const wasIntercepted = await watchIntercept(page)
+			await page.goto(from)
+			const expectedUrl = await page.evaluate((href) => new URL(href, location.href).href, to)
+
+			await page.evaluate((href) => navigation.navigate(href), to)
+			await page.waitForURL(expectedUrl)
+
+			expect(wasIntercepted()).toBe(false)
+		})
+	}
+
+	test('/ -> / (no hash on either side) is intercepted', async ({ page }) => {
+		const wasIntercepted = await watchIntercept(page)
+		await page.goto('/')
+
+		const loaded = page.evaluate(() => new Promise(resolve => {
+			document.addEventListener('hop:load', resolve, { once: true })
+		}))
+		await page.evaluate(() => navigation.navigate('/'))
+		await loaded
+
+		expect(wasIntercepted()).toBe(true)
+	})
+
+	test('link with same-path href not starting with # is intercepted', async ({ page }) => {
+		const wasIntercepted = await watchIntercept(page)
+		await page.goto('/')
+
+		const loaded = page.evaluate(() => new Promise(resolve => {
+			document.addEventListener('hop:load', resolve, { once: true })
+		}))
+		await page.click('a[href="/#same-path-hash"]')
+		await loaded
+
+		expect(wasIntercepted()).toBe(true)
+	})
+})
+
 test.describe('Forms', () => {
 	test('form GET keeps same document', async ({ page }) => {
 		await page.goto('/fixtures/form-get.html')
