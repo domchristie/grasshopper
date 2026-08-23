@@ -213,7 +213,7 @@ function formResultHTML(method, params) {
 <html>
 <head>
   <title>Form Result</title>
-  <script src="/grasshopper.js"></script>
+  <script src="/grasshopper.js" type="module"></script>
   <meta name="hop" content="true" />
 </head>
 <body>
@@ -235,7 +235,7 @@ function slowHTML(delay) {
 <html>
 <head>
   <title>Slow Page</title>
-  <script src="/grasshopper.js"></script>
+  <script src="/grasshopper.js" type="module"></script>
   <meta name="hop" content="true" />
 </head>
 <body>
@@ -248,4 +248,3 @@ function slowHTML(delay) {
 </body>
 </html>`
 }
-

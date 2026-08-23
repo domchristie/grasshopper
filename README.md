@@ -13,6 +13,16 @@ Faster HTML over-the-wire navigations using the [Navigation API](https://develop
 
 The `<meta name="hop" content="true">` tag must be present on both the current page and the target page. Without it, grasshopper falls back to standard browser navigation.
 
+## Starting and Stopping
+
+Grasshopper automatically starts on `DOMContentLoaded`. For manual control, import `start` and/or `stop`. For example, to perform a navigation that's not handled by grasshopper:
+
+```js
+import { start, stop } from '/grasshopper.js'
+stop()
+window.location = '/subscribe' // full page load, not handled by grasshopper
+```
+
 ## Persisting Elements
 
 Add `data-hop-persist` and a unique `id` to elements that should survive navigation:

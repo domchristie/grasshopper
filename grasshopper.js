@@ -12,121 +12,128 @@ let parser
 let abortController
 let viewTransition
 
-function start() {
+export function start() {
 	if (started || !enabled() || !('navigation' in window)) return
 	resetViewTransition()
-
-	navigation.addEventListener('navigate', async function (ev) {
-		abortController?.abort()
-		document.documentElement.removeAttribute(DIRECTION_ATTR)
-		document.querySelector(`[${ID_ATTR}]`)?.removeAttribute(ID_ATTR)
-
-		const from = new URL(location.href)
-		const to = new URL(ev.destination.url)
-		const canPrecommit = nativePrecommit && ev.cancelable
-		let { doc, response, sourceElement, id, direction, scroll } = ev.info?.hop || {}
-		sourceElement = sourceElement ?? ev.sourceElement
-		id = id || crypto.randomUUID()
-		const isSamePage = ev.navigationType === 'reload' || to.pathname === from.pathname
-		direction ||= ev.navigationType === 'traverse'
-			? (ev.destination.index > navigation.currentEntry.index ? 'forward' : 'back')
-			: isSamePage ? 'none' : 'forward'
-
-		const options = {
-			id,
-			sourceElement,
-			from,
-			to,
-			method: ev.formData ? 'POST' : 'GET',
-			body: ev.formData,
-			headers: { 'x-hop-id': id },
-			navEvent: ev,
-			direction,
-			scroll,
-		}
-
-		if (
-			!ev.canIntercept ||
-			to.origin !== from.origin || // WebKit 26.2 fix
-			ev.info?.hop === false ||
-			ev.downloadRequest ||
-			isSamePageHash(from, to, sourceElement) ||
-			!enabled(sourceElement) ||
-			!send(sourceElement, 'before-intercept', { detail: { options }, cancelable: true})
-		) return
-
-		sourceElement?.setAttribute(ID_ATTR, id)
-		document.documentElement.setAttribute(DIRECTION_ATTR, direction)
-
-		if (!canPrecommit && ev.navigationType !== 'traverse') {
-			abortController = null
-			if (!doc) {
-				ev.preventDefault()
-				abortController = new AbortController()
-				try { await precommitHandler(null) } catch { /* aborted or failed before commit; already prevented */ }
-				return
-			}
-		}
-
-		async function precommitHandler(controller) {
-			if (!doc) ({ response, doc } = await fetchHTML(options))
-
-			let history = (
-				from.href === response?.url || sourceElement?.closest('[data-hop-type="replace"]')
-					? 'replace'
-					: ev.navigationType
-			)
-			let redirectTo = response?.redirected && response?.url
-
-			if (canPrecommit
-				? redirectTo || history !== ev.navigationType
-				: ev.navigationType !== 'traverse'
-			)
-				return redirect(controller,
-					redirectTo || ev.destination.url, {
-					history, info: { ...ev.info, hop: { doc, response, sourceElement, id, direction, scroll } }
-				})
-		}
-
-		ev.intercept({
-			...(canPrecommit && { precommitHandler }),
-
-			async handler() {
-				if (!canPrecommit && ev.navigationType === 'traverse')
-					await precommitHandler(null)
-
-				try {
-					viewTransition.skipTransition()
-					await viewTransition.updateCallbackDone
-				} catch { /* ignore */ }
-
-				if (canFallback(response, ev) && trackedElementsChanged(doc))
-					return navigation.reload({ info: { hop: false } })
-
-				viewTransition = await startViewTransition(ev, async () => {
-					await swap(doc, options)
-					await doScroll(options)
-				}, options)
-
-				viewTransition.updateCallbackDone.finally(async () => {
-					await runScripts()
-					send(sourceElement, 'load', { detail: { options } })
-				})
-
-				viewTransition.finished.finally(() => {
-					document.documentElement.removeAttribute(DIRECTION_ATTR)
-					sourceElement?.removeAttribute(ID_ATTR)
-					send(sourceElement, 'after-transition', { detail: { options } })
-					resetViewTransition()
-				})
-
-				return viewTransition.updateCallbackDone
-			},
-			focus: 'manual',
-			scroll: 'manual'
-		})
-	})
+	navigation.addEventListener('navigate', onNavigate)
 	started = true
+}
+
+export function stop() {
+	if (!started) return
+	navigation.removeEventListener('navigate', onNavigate)
+	abortController?.abort()
+	started = false
+}
+
+async function onNavigate(ev) {
+	abortController?.abort()
+	document.documentElement.removeAttribute(DIRECTION_ATTR)
+	document.querySelector(`[${ID_ATTR}]`)?.removeAttribute(ID_ATTR)
+
+	const from = new URL(location.href)
+	const to = new URL(ev.destination.url)
+	const canPrecommit = nativePrecommit && ev.cancelable
+	let { doc, response, sourceElement, id, direction, scroll } = ev.info?.hop || {}
+	sourceElement = sourceElement ?? ev.sourceElement
+	id = id || crypto.randomUUID()
+	const isSamePage = ev.navigationType === 'reload' || to.pathname === from.pathname
+	direction ||= ev.navigationType === 'traverse'
+		? (ev.destination.index > navigation.currentEntry.index ? 'forward' : 'back')
+		: isSamePage ? 'none' : 'forward'
+
+	const options = {
+		id,
+		sourceElement,
+		from,
+		to,
+		method: ev.formData ? 'POST' : 'GET',
+		body: ev.formData,
+		headers: { 'x-hop-id': id },
+		navEvent: ev,
+		direction,
+		scroll,
+	}
+
+	if (
+		!ev.canIntercept ||
+		to.origin !== from.origin || // WebKit 26.2 fix
+		ev.downloadRequest ||
+		isSamePageHash(from, to, sourceElement) ||
+		!enabled(sourceElement) ||
+		!send(sourceElement, 'before-intercept', { detail: { options }, cancelable: true})
+	) return
+
+	sourceElement?.setAttribute(ID_ATTR, id)
+	document.documentElement.setAttribute(DIRECTION_ATTR, direction)
+
+	if (!canPrecommit && ev.navigationType !== 'traverse') {
+		abortController = null
+		if (!doc) {
+			ev.preventDefault()
+			abortController = new AbortController()
+			try { await precommitHandler(null) } catch { /* aborted or failed before commit; already prevented */ }
+			return
+		}
+	}
+
+	async function precommitHandler(controller) {
+		if (!doc) ({ response, doc } = await fetchHTML(options))
+
+		let history = (
+			from.href === response?.url || sourceElement?.closest('[data-hop-type="replace"]')
+				? 'replace'
+				: ev.navigationType
+		)
+		let redirectTo = response?.redirected && response?.url
+
+		if (canPrecommit
+			? redirectTo || history !== ev.navigationType
+			: ev.navigationType !== 'traverse'
+		)
+			return redirect(controller,
+				redirectTo || ev.destination.url, {
+				history, info: { ...ev.info, hop: { doc, response, sourceElement, id, direction, scroll } }
+			})
+	}
+
+	ev.intercept({
+		...(canPrecommit && { precommitHandler }),
+
+		async handler() {
+			if (!canPrecommit && ev.navigationType === 'traverse')
+				await precommitHandler(null)
+
+			try {
+				viewTransition.skipTransition()
+				await viewTransition.updateCallbackDone
+			} catch { /* ignore */ }
+
+			if (canFallback(response, ev) && trackedElementsChanged(doc))
+				return stop(), navigation.reload()
+
+			viewTransition = await startViewTransition(ev, async () => {
+				await swap(doc, options)
+				await doScroll(options)
+			}, options)
+
+			viewTransition.updateCallbackDone.finally(async () => {
+				await runScripts()
+				send(sourceElement, 'load', { detail: { options } })
+			})
+
+			viewTransition.finished.finally(() => {
+				document.documentElement.removeAttribute(DIRECTION_ATTR)
+				sourceElement?.removeAttribute(ID_ATTR)
+				send(sourceElement, 'after-transition', { detail: { options } })
+				resetViewTransition()
+			})
+
+			return viewTransition.updateCallbackDone
+		},
+		focus: 'manual',
+		scroll: 'manual'
+	})
 }
 addEventListener('DOMContentLoaded', start)
 
@@ -407,7 +414,7 @@ const canFallback = (response, navEvent) =>
 
 // Fallback to an unintercepted navigation
 function fallback(to) {
-	return navigation.navigate(to, { info: { hop: false } }).finished
+	return stop(), navigation.navigate(to).finished
 }
 
 function redirect(controller, to, options = {}) {
