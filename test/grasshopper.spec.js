@@ -1380,3 +1380,97 @@ test.describe('Traversal Without History-Action Activation', () => {
 		expect(pageErrors).toEqual([])
 	})
 })
+
+test.describe('Start/Stop', () => {
+	test('stop() prevents interception; link falls back to full navigation', async ({ page }) => {
+		await page.goto('/')
+		const docId = await markDocument(page)
+
+		await page.evaluate(async () => {
+			const { stop } = await import('/grasshopper.js')
+			stop()
+		})
+
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+		expect(await getDocumentId(page)).not.toBe(docId)
+	})
+
+	test('start() re-enables interception after stop()', async ({ page }) => {
+		await page.goto('/')
+
+		await page.evaluate(async () => {
+			const { start, stop } = await import('/grasshopper.js')
+			stop()
+			start()
+		})
+
+		const docId = await markDocument(page)
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+		expect(await getDocumentId(page)).toBe(docId)
+	})
+
+	test('stop() when already stopped is a no-op', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.goto('/')
+		await page.evaluate(async () => {
+			const { stop } = await import('/grasshopper.js')
+			stop()
+			stop()
+		})
+
+		expect(pageErrors).toEqual([])
+		const docId = await markDocument(page)
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+		expect(await getDocumentId(page)).not.toBe(docId)
+	})
+
+	test('start() when already started does not duplicate navigation handling', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.goto('/')
+		const docId = await markDocument(page)
+		await page.evaluate(async () => {
+			const { start } = await import('/grasshopper.js')
+			start()
+			start()
+			start()
+		})
+
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+		expect(await getDocumentId(page)).toBe(docId)
+		expect(pageErrors).toEqual([])
+	})
+
+	test('stop() aborts an in-flight navigation and prevents it from completing', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.goto('/')
+		const docId = await markDocument(page)
+		const url = page.url()
+
+		const fetchStarted = page.evaluate(() => new Promise(resolve => {
+			document.addEventListener('hop:before-fetch', resolve, { once: true })
+		}))
+		page.click('a[href="/slow"]') // default 3s delay, well outside this test's assertion window
+		await fetchStarted
+
+		await page.evaluate(async () => {
+			const { stop } = await import('/grasshopper.js')
+			stop()
+		})
+
+		await page.waitForTimeout(500)
+		await expect(page).toHaveTitle('Test Hub')
+		expect(page.url()).toBe(url)
+		expect(await getDocumentId(page)).toBe(docId)
+		expect(pageErrors).toEqual([])
+	})
+})
