@@ -927,6 +927,101 @@ test.describe('runScripts', () => {
 	})
 })
 
+test.describe('Public API: replace() and runScripts()', () => {
+	test('replace() swaps an arbitrary element, not just document.body', async ({ page }) => {
+		await page.goto('/')
+
+		const result = await page.evaluate(async () => {
+			const { replace } = await import('/grasshopper.js')
+
+			const oldEl = document.createElement('div')
+			oldEl.id = 'old'
+			oldEl.textContent = 'old content'
+			document.body.append(oldEl)
+
+			const newEl = document.createElement('div')
+			newEl.id = 'new'
+			newEl.textContent = 'new content'
+
+			replace(oldEl, newEl)
+
+			return {
+				oldGone: !document.getElementById('old'),
+				newText: document.getElementById('new')?.textContent,
+			}
+		})
+
+		expect(result.oldGone).toBe(true)
+		expect(result.newText).toBe('new content')
+	})
+
+	test('replace() moves data-hop-persist elements from the old subtree into the new one', async ({ page }) => {
+		await page.goto('/')
+
+		const result = await page.evaluate(async () => {
+			const { replace } = await import('/grasshopper.js')
+
+			const oldEl = document.createElement('div')
+			oldEl.innerHTML = '<p id="persisted" data-hop-persist>keep me</p>'
+			document.body.append(oldEl)
+			oldEl.querySelector('#persisted').__marker = true // identity check: same node, not a clone
+
+			const newEl = document.createElement('div')
+			newEl.innerHTML = '<p id="persisted" data-hop-persist>placeholder</p>'
+
+			replace(oldEl, newEl)
+
+			const swapped = document.getElementById('persisted')
+			return {
+				text: swapped?.textContent,
+				isSameNode: swapped?.__marker === true,
+			}
+		})
+
+		expect(result.text).toBe('keep me')
+		expect(result.isSameNode).toBe(true)
+	})
+
+	test('runScripts() executes scripts flagged as new by replace()', async ({ page }) => {
+		await page.goto('/')
+
+		const executed = await page.evaluate(async () => {
+			const { replace, runScripts } = await import('/grasshopper.js')
+
+			const oldEl = document.createElement('div')
+			document.body.append(oldEl)
+
+			const newEl = document.createElement('div')
+			newEl.innerHTML = '<script>window.__manualRunScripts = true</script>'
+
+			replace(oldEl, newEl)
+			await runScripts()
+
+			return !!window.__manualRunScripts
+		})
+
+		expect(executed).toBe(true)
+	})
+
+	test('runScripts() ignores scripts that were not flagged by replace()', async ({ page }) => {
+		await page.goto('/')
+
+		const executed = await page.evaluate(async () => {
+			const { runScripts } = await import('/grasshopper.js')
+
+			const container = document.createElement('div')
+			container.innerHTML = '<script>window.__unflaggedScriptRan = true</script>'
+			document.body.append(container) // inserted directly, bypassing replace(), so never flagged
+
+			await runScripts()
+
+			return !!window.__unflaggedScriptRan
+		})
+
+		expect(executed).toBe(false)
+	})
+})
+
 test.describe('Shadow DOM', () => {
 	test('declarative shadow root attaches after swap, including nested shadow roots', async ({ page }) => {
 		await page.goto('/fixtures/shadow-a.html')

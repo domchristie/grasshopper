@@ -222,7 +222,7 @@ async function swap(doc, options) {
 	swapRootAttributes(doc)
 	swapHeadElements(doc)
 	withRestoredFocus(() => {
-		swapBodyElement(doc.body)
+		replace(document.body, doc.body)
 	})
 	send(options.sourceElement, 'after-swap', { detail: { options } })
 }
@@ -273,15 +273,14 @@ function withRestoredFocus(callback) {
 	}
 }
 
-function swapBodyElement(newBody) {
-	const oldBody = document.body
-	oldBody.replaceWith(newBody) // resets scroll position
+export function replace(oldEl, newEl) {
+	oldEl.replaceWith(newEl)
 
-	for (const el of oldBody.querySelectorAll(`[${PERSIST_ATTR}]`)) {
-		el.id && newBody.querySelector(`#${el.id}[${PERSIST_ATTR}]`)?.replaceWith(el)
+	for (const el of oldEl.querySelectorAll(`[${PERSIST_ATTR}]`)) {
+		el.id && newEl.querySelector(`#${el.id}[${PERSIST_ATTR}]`)?.replaceWith(el)
 	}
-	flagNewScripts(newBody.getElementsByTagName('script'))
-	attachShadowRoots(newBody)
+	flagNewScripts(newEl.getElementsByTagName('script'))
+	attachShadowRoots(newEl)
 }
 
 function attachShadowRoots(root) {
@@ -317,7 +316,7 @@ async function doScroll(options) {
 	send(options.sourceElement, 'after-scroll', { detail: { options } })
 }
 
-function runScripts() {
+export function runScripts() {
 	const runnable = [...document.scripts].filter(
 		script => (script).__new && script.dataset.hopEval !== 'false'
 	)
