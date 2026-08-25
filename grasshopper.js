@@ -1,4 +1,3 @@
-const MEDIA_TYPES = ['text/html', 'application/xhtml+xml']
 const DIRECTION_ATTR = 'data-hop-direction'
 const PERSIST_ATTR = 'data-hop-persist'
 const DISABLED_ATTR = 'data-hop'
@@ -395,7 +394,8 @@ function isSamePageHash(from, to, sourceElement) {
 	return from.pathname === to.pathname && from.search === to.search
 }
 
-const supportsMediaType = (type) => MEDIA_TYPES.includes(type)
+const supportsMediaType = (type) =>
+	['text/html', 'application/xhtml+xml'].includes(type)
 
 function trackedElementsChanged(doc) {
 	const oldEls = [...document.querySelectorAll(`[${TRACK_ATTR}="reload"]`)]
@@ -411,10 +411,7 @@ function trackedElementsChanged(doc) {
 const canFallback = (response, navEvent) =>
 	response?.redirected || !navEvent.formData
 
-// Fallback to an unintercepted navigation
-function fallback(to) {
-	return stop(), navigation.navigate(to).finished
-}
+const fallback = (to) => (stop(), navigation.navigate(to))
 
 function redirect(controller, to, options = {}) {
 	try {
