@@ -13,16 +13,6 @@ Faster HTML over-the-wire navigations using the [Navigation API](https://develop
 
 The `<meta name="hop" content="true">` tag must be present on both the current page and the target page. Without it, grasshopper falls back to standard browser navigation.
 
-## Starting and Stopping
-
-Grasshopper automatically starts on `DOMContentLoaded`. For manual control, import `start` and/or `stop`. For example, to perform a navigation that's not handled by grasshopper:
-
-```js
-import { start, stop } from '/grasshopper.js'
-stop()
-window.location = '/subscribe' // full page load, not handled by grasshopper
-```
-
 ## Persisting Elements
 
 Add `data-hop-persist` and a unique `id` to elements that should survive navigation:
@@ -103,6 +93,44 @@ This is useful for filtering, sorting, or making changes in-place.
 - The navigation must be to the same pathname
 - The triggering element must have `data-hop-type="replace"` (or be inside one)
 - The page must have `<meta name="hop-refresh-scroll" content="preserve">`
+
+## Exports
+
+### `start` and `stop`
+
+Grasshopper automatically starts on `DOMContentLoaded`. For manual control, import `start` and/or `stop`:
+
+```js
+import { start, stop } from '/grasshopper.js'
+stop()
+history.replaceState({}, '', '#photo-3') // replaces URL without interception
+start()
+
+stop()
+window.location = '/subscribe' // full page load
+```
+
+`start` adds the `navigate` event listener. Requires that the page includes `<meta name="hop" content="true">`.
+
+`stop` removes the `navigate` event listener.
+
+### `replace` and `runScripts`
+
+For swaps outside of navigation (e.g. applying a fragment of HTML fetched by your own code or a third-party library), import `replace` and `runScripts`:
+
+```js
+import { replace, runScripts } from '/grasshopper.js'
+
+const newEl = document.createElement('div')
+newEl.innerHTML = await (await fetch('/fragment')).text()
+
+replace(document.getElementById('target'), newEl)
+await runScripts()
+```
+
+`replace(oldEl, newEl)` swaps `oldEl` for `newEl` in the DOM. It uses the same mechanism grasshopper uses internally to swap `<body>`: it keeps [persisted elements](#persisting-elements), flags new scripts for execution, and attaches any declarative shadow roots.
+
+`runScripts()` executes scripts flagged by `replace()`. It returns a promise that resolves once all external and module scripts have loaded and run.
 
 ## Events
 
