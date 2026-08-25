@@ -119,10 +119,9 @@ test.describe('Fragments', () => {
 		await expect(page).toHaveURL(/fragment\.html#target/)
 		// toHaveURL resolves as soon as the Navigation API commits the URL, which happens
 		// before swap()/doScroll() apply :target — so assert via the auto-retrying
-		// toHaveCSS first, then the one-shot :target check is safe to read.
+		// toHaveCSS first, then the :target check.
 		await expect(page.locator('#target')).toHaveCSS('background-color', 'rgb(255, 255, 224)')
-		const isTarget = await page.evaluate(() => document.querySelector('#target:target') !== null)
-		expect(isTarget).toBe(true)
+		await expect(page.locator('#target:target')).toHaveCount(1)
 	})
 
 	test('target fragment still matches :target selector after back and forward', async ({ page }) => {
@@ -132,13 +131,12 @@ test.describe('Fragments', () => {
 		await expect(page.locator('#target')).toHaveCSS('background-color', 'rgb(255, 255, 224)')
 
 		await page.goBack()
-		await expect(page).toHaveURL('http://localhost:3000/')
+		await expect(page).toHaveURL('/')
 
 		await page.goForward()
 		await expect(page).toHaveURL(/fragment\.html#target/)
 		await expect(page.locator('#target')).toHaveCSS('background-color', 'rgb(255, 255, 224)')
-		const isTarget = await page.evaluate(() => document.querySelector('#target:target') !== null)
-		expect(isTarget).toBe(true)
+		await expect(page.locator('#target:target')).toHaveCount(1)
 	})
 })
 
@@ -926,6 +924,59 @@ test.describe('runScripts', () => {
 		await expect(page).toHaveTitle('Module Order Target')
 
 		expect(await orderAtLoad).toEqual(['inline-module', 'external-module'])
+	})
+})
+
+test.describe('Shadow DOM', () => {
+	test('declarative shadow root attaches after swap, including nested shadow roots', async ({ page }) => {
+		await page.goto('/fixtures/shadow-a.html')
+		const docId = await markDocument(page)
+
+		await expect(page.locator('#shadow-content')).toHaveText('Shadow A content')
+		await expect(page.locator('#nested-content')).toHaveText('Nested shadow content')
+
+		await page.click('a[href="/fixtures/shadow-b.html"]')
+		await expect(page).toHaveTitle('Shadow B')
+		expect(await getDocumentId(page)).toBe(docId)
+
+		// Shadow B declares its root as closed, so it can't be read back via the public
+		// API. Confirm it was attached by checking that attaching a second one now throws.
+		expect(await page.evaluate(() => document.querySelector('#host').shadowRoot)).toBeNull()
+		const closedRootAlreadyAttached = await page.evaluate(() => {
+			try {
+				document.querySelector('#host').attachShadow({ mode: 'closed' })
+				return false
+			} catch {
+				return true
+			}
+		})
+		expect(closedRootAlreadyAttached).toBe(true)
+
+		await page.click('a[href="/fixtures/shadow-a.html"]')
+		await expect(page).toHaveTitle('Shadow A')
+		await expect(page.locator('#shadow-content')).toHaveText('Shadow A content')
+		await expect(page.locator('#nested-content')).toHaveText('Nested shadow content')
+
+		// The <template> elements used to declare the shadow roots are consumed, not left in the DOM.
+		await expect(page.locator('template[shadowrootmode]')).toHaveCount(0)
+	})
+
+	test('a persisted shadow host keeps its own shadow root and content across navigation', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.goto('/fixtures/shadow-persist-a.html')
+		const docId = await markDocument(page)
+		await expect(page.locator('#shadow-content')).toHaveText('Persisted shadow content A')
+
+		await page.click('a[href="/fixtures/shadow-persist-b.html"]')
+		await expect(page).toHaveTitle('Shadow Persist B')
+		expect(await getDocumentId(page)).toBe(docId)
+
+		// The persisted host element survives, keeping its original shadow content,
+		// not the freshly fetched page's shadow content.
+		await expect(page.locator('#shadow-content')).toHaveText('Persisted shadow content A')
+		expect(pageErrors).toEqual([])
 	})
 })
 
