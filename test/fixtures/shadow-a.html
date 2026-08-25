@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Shadow A</title>
+	<link rel="icon" href="data:,">
+	<script src="/grasshopper.js" type="module"></script>
+	<meta name="hop" content="true" />
+</head>
+<body>
+	<h1>Shadow A</h1>
+	<a href="/fixtures/shadow-b.html">Go to Shadow B</a>
+
+	<div id="host">
+		<template shadowrootmode="open">
+			<p id="shadow-content">Shadow A content</p>
+			<div id="nested-host">
+				<template shadowrootmode="open">
+					<p id="nested-content">Nested shadow content</p>
+				</template>
+			</div>
+		</template>
+	</div>
+</body>
+</html>

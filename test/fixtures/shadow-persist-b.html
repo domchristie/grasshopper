@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Shadow Persist B</title>
+	<link rel="icon" href="data:,">
+	<script src="/grasshopper.js" type="module"></script>
+	<meta name="hop" content="true" />
+</head>
+<body>
+	<h1>Shadow Persist B</h1>
+	<a href="/fixtures/shadow-persist-a.html">Go to Shadow Persist A</a>
+
+	<div id="shadow-host" data-hop-persist>
+		<template shadowrootmode="open">
+			<p id="shadow-content">Fresh shadow content B (should not appear)</p>
+		</template>
+	</div>
+</body>
+</html>
