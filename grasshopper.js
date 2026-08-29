@@ -1,4 +1,3 @@
-const DIRECTION_ATTR = 'data-hop-direction'
 const PERSIST_ATTR = 'data-hop-persist'
 const DISABLED_ATTR = 'data-hop'
 const TRACK_ATTR = 'data-hop-track'
@@ -27,19 +26,14 @@ export function stop() {
 
 async function onNavigate(ev) {
 	abortController?.abort()
-	document.documentElement.removeAttribute(DIRECTION_ATTR)
 	document.querySelector(`[${ID_ATTR}]`)?.removeAttribute(ID_ATTR)
 
 	const from = new URL(location.href)
 	const to = new URL(ev.destination.url)
 	const canPrecommit = nativePrecommit && ev.cancelable
-	let { doc, response, sourceElement, id, direction, scroll } = ev.info?.hop || {}
+	let { doc, response, sourceElement, id, scroll } = ev.info?.hop || {}
 	sourceElement = sourceElement ?? ev.sourceElement
 	id = id || crypto.randomUUID()
-	const isSamePage = ev.navigationType === 'reload' || to.pathname === from.pathname
-	direction ||= ev.navigationType === 'traverse'
-		? (ev.destination.index > navigation.currentEntry.index ? 'forward' : 'back')
-		: isSamePage ? 'none' : 'forward'
 
 	const options = {
 		id,
@@ -50,7 +44,6 @@ async function onNavigate(ev) {
 		body: ev.formData,
 		headers: { 'x-hop-id': id },
 		navEvent: ev,
-		direction,
 		scroll,
 	}
 
@@ -64,7 +57,6 @@ async function onNavigate(ev) {
 	) return
 
 	sourceElement?.setAttribute(ID_ATTR, id)
-	document.documentElement.setAttribute(DIRECTION_ATTR, direction)
 
 	if (!canPrecommit && ev.navigationType !== 'traverse') {
 		abortController = null
@@ -92,7 +84,7 @@ async function onNavigate(ev) {
 		)
 			return redirect(controller,
 				redirectTo || ev.destination.url, {
-				history, info: { ...ev.info, hop: { doc, response, sourceElement, id, direction, scroll } }
+				history, info: { ...ev.info, hop: { doc, response, sourceElement, id, scroll } }
 			})
 	}
 
@@ -122,7 +114,6 @@ async function onNavigate(ev) {
 			})
 
 			viewTransition.finished.finally(() => {
-				document.documentElement.removeAttribute(DIRECTION_ATTR)
 				sourceElement?.removeAttribute(ID_ATTR)
 				send(sourceElement, 'after-transition', { detail: { options } })
 				resetViewTransition()
@@ -228,11 +219,8 @@ async function swap(doc, options) {
 
 function swapRootAttributes(doc) {
 	const currentRoot = document.documentElement
-	const persistedAttrs = [...currentRoot.attributes].filter(
-		({ name }) => (currentRoot.removeAttribute(name), [DIRECTION_ATTR].includes(name))
-	)
-	const attrs = [...doc.documentElement.attributes, ...persistedAttrs]
-	attrs.forEach(({ name, value }) => currentRoot.setAttribute(name, value))
+	for (const { name } of [...currentRoot.attributes]) currentRoot.removeAttribute(name)
+	for (const { name, value } of doc.documentElement.attributes) currentRoot.setAttribute(name, value)
 }
 
 function swapHeadElements(doc) {
