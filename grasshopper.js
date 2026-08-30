@@ -28,39 +28,37 @@ async function onNavigate(ev) {
 	abortController?.abort()
 	document.querySelector(`[${ID_ATTR}]`)?.removeAttribute(ID_ATTR)
 
-	const from = new URL(location.href)
-	const to = new URL(ev.destination.url)
 	const canPrecommit = nativePrecommit && ev.cancelable
-	let { doc, response, sourceElement, id, scroll } = ev.info?.hop || {}
-	sourceElement = sourceElement ?? ev.sourceElement
+	let { id, sourceElement } = ev.info?.hop || {}
 	id = id || crypto.randomUUID()
+	sourceElement = sourceElement || ev.sourceElement
 
 	const options = {
 		id,
-		sourceElement,
-		from,
-		to,
+		from: new URL(location.href),
+		to: new URL(ev.destination.url),
 		method: ev.formData ? 'POST' : 'GET',
 		body: ev.formData,
 		headers: { 'x-hop-id': id },
-		navEvent: ev,
-		scroll,
+		sourceElement,
+		...(ev.info?.hop || {}),
+		navEvent: ev // prevent stale navEvent forwarded from a non-precommit flow
 	}
 
 	if (
 		!ev.canIntercept ||
-		to.origin !== from.origin || // WebKit 26.2 fix
+		options.to.origin !== options.from.origin || // WebKit 26.2 fix
 		ev.downloadRequest ||
-		isSamePageHash(from, to, sourceElement) ||
-		!enabled(sourceElement) ||
-		!send(sourceElement, 'before-intercept', { detail: { options }, cancelable: true})
+		isSamePageHash(options.from, options.to, options.sourceElement) ||
+		!enabled(options.sourceElement) ||
+		!send(options.sourceElement, 'before-intercept', { detail: { options }, cancelable: true })
 	) return
 
-	sourceElement?.setAttribute(ID_ATTR, id)
+	options.sourceElement?.setAttribute(ID_ATTR, id)
 
 	if (!canPrecommit && ev.navigationType !== 'traverse') {
 		abortController = null
-		if (!doc) {
+		if (!options.doc) {
 			ev.preventDefault()
 			abortController = new AbortController()
 			try { await precommitHandler(null) } catch { /* aborted or failed before commit; already prevented */ }
@@ -69,14 +67,14 @@ async function onNavigate(ev) {
 	}
 
 	async function precommitHandler(controller) {
-		if (!doc) ({ response, doc } = await fetchHTML(options))
+		if (!options.doc) Object.assign(options, await fetchHTML(options))
 
 		let history = (
-			from.href === response?.url || sourceElement?.closest('[data-hop-type="replace"]')
+			options.from.href === options.response?.url || options.sourceElement?.closest('[data-hop-type="replace"]')
 				? 'replace'
 				: ev.navigationType
 		)
-		let redirectTo = response?.redirected && response?.url
+		let redirectTo = options.response?.redirected && options.response?.url
 
 		if (canPrecommit
 			? redirectTo || history !== ev.navigationType
@@ -84,7 +82,7 @@ async function onNavigate(ev) {
 		)
 			return redirect(controller,
 				redirectTo || ev.destination.url, {
-				history, info: { ...ev.info, hop: { doc, response, sourceElement, id, scroll } }
+				history, info: { ...ev.info, hop: options }
 			})
 	}
 
@@ -100,22 +98,22 @@ async function onNavigate(ev) {
 				await viewTransition.updateCallbackDone
 			} catch { /* ignore */ }
 
-			if (canFallback(response, ev) && trackedElementsChanged(doc))
+			if (canFallback(options.response, ev) && trackedElementsChanged(options.doc))
 				return stop(), navigation.reload()
 
 			viewTransition = await startViewTransition(ev, async () => {
-				await swap(doc, options)
-				await doScroll(options)
+				await swap(options)
+				await scroll(options)
 			}, options)
 
 			viewTransition.updateCallbackDone.finally(async () => {
 				await runScripts()
-				send(sourceElement, 'load', { detail: { options } })
+				send(options.sourceElement, 'load', { detail: { options } })
 			})
 
 			viewTransition.finished.finally(() => {
-				sourceElement?.removeAttribute(ID_ATTR)
-				send(sourceElement, 'after-transition', { detail: { options } })
+				options.sourceElement?.removeAttribute(ID_ATTR)
+				send(options.sourceElement, 'after-transition', { detail: { options } })
 				resetViewTransition()
 			})
 
@@ -207,12 +205,12 @@ async function startViewTransition(navEvent, update, options = {}) {
 	return viewTransition
 }
 
-async function swap(doc, options) {
+async function swap(options) {
 	if (!await sendInterceptable(options.sourceElement, 'before-swap', { detail: { options }, cancelable: true })) return
-	swapRootAttributes(doc)
-	swapHeadElements(doc)
+	swapRootAttributes(options.doc)
+	swapHeadElements(options.doc)
 	withRestoredFocus(() => {
-		replace(document.body, doc.body)
+		replace(document.body, options.doc.body)
 	})
 	send(options.sourceElement, 'after-swap', { detail: { options } })
 }
@@ -286,7 +284,7 @@ function attachShadowRoots(root) {
 	})
 }
 
-async function doScroll(options) {
+async function scroll(options) {
 	if (options.scroll === 'preserve') return
 	if (!await sendInterceptable(options.sourceElement, 'before-scroll', { detail: { options }, cancelable: true })) return
 
