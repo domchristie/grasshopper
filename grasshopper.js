@@ -33,7 +33,7 @@ async function onNavigate(ev) {
 	id = id || crypto.randomUUID()
 	sourceElement = sourceElement || ev.sourceElement
 
-	const options = {
+	const hop = {
 		id,
 		from: new URL(location.href),
 		to: new URL(ev.destination.url),
@@ -47,18 +47,18 @@ async function onNavigate(ev) {
 
 	if (
 		!ev.canIntercept ||
-		options.to.origin !== options.from.origin || // WebKit 26.2 fix
+		hop.to.origin !== hop.from.origin || // WebKit 26.2 fix
 		ev.downloadRequest ||
-		isSamePageHash(options.from, options.to, options.sourceElement) ||
-		!enabled(options.sourceElement) ||
-		!send(options.sourceElement, 'before-intercept', { detail: { options }, cancelable: true })
+		isSamePageHash(hop.from, hop.to, hop.sourceElement) ||
+		!enabled(hop.sourceElement) ||
+		!send(hop.sourceElement, 'before-intercept', { detail: { hop }, cancelable: true })
 	) return
 
-	options.sourceElement?.setAttribute(ID_ATTR, id)
+	hop.sourceElement?.setAttribute(ID_ATTR, id)
 
 	if (!canPrecommit && ev.navigationType !== 'traverse') {
 		abortController = null
-		if (!options.doc) {
+		if (!hop.doc) {
 			ev.preventDefault()
 			abortController = new AbortController()
 			try { await precommitHandler(null) } catch { /* aborted or failed before commit; already prevented */ }
@@ -67,14 +67,14 @@ async function onNavigate(ev) {
 	}
 
 	async function precommitHandler(controller) {
-		if (!options.doc) Object.assign(options, await fetchHTML(options))
+		if (!hop.doc) Object.assign(hop, await fetchHTML(hop))
 
 		let history = (
-			options.from.href === options.response?.url || options.sourceElement?.closest('[data-hop-type="replace"]')
+			hop.from.href === hop.response?.url || hop.sourceElement?.closest('[data-hop-type="replace"]')
 				? 'replace'
 				: ev.navigationType
 		)
-		let redirectTo = options.response?.redirected && options.response?.url
+		let redirectTo = hop.response?.redirected && hop.response?.url
 
 		if (canPrecommit
 			? redirectTo || history !== ev.navigationType
@@ -82,7 +82,7 @@ async function onNavigate(ev) {
 		)
 			return redirect(controller,
 				redirectTo || ev.destination.url, {
-				history, info: { ...ev.info, hop: options }
+				history, info: { ...ev.info, hop }
 			})
 	}
 
@@ -98,22 +98,22 @@ async function onNavigate(ev) {
 				await viewTransition.updateCallbackDone
 			} catch { /* ignore */ }
 
-			if (canFallback(options.response, ev) && trackedElementsChanged(options.doc))
+			if (canFallback(hop.response, ev) && trackedElementsChanged(hop.doc))
 				return stop(), navigation.reload()
 
 			viewTransition = await startViewTransition(ev, async () => {
-				await swap(options)
-				await scroll(options)
-			}, options)
+				await swap(hop)
+				await scroll(hop)
+			}, hop)
 
 			viewTransition.updateCallbackDone.finally(async () => {
 				await runScripts()
-				send(options.sourceElement, 'load', { detail: { options } })
+				send(hop.sourceElement, 'load', { detail: { hop } })
 			})
 
 			viewTransition.finished.finally(() => {
-				options.sourceElement?.removeAttribute(ID_ATTR)
-				send(options.sourceElement, 'after-transition', { detail: { options } })
+				hop.sourceElement?.removeAttribute(ID_ATTR)
+				send(hop.sourceElement, 'after-transition', { detail: { hop } })
 				resetViewTransition()
 			})
 
@@ -125,25 +125,25 @@ async function onNavigate(ev) {
 }
 addEventListener('DOMContentLoaded', start)
 
-async function fetchHTML(options) {
+async function fetchHTML(hop) {
 	try {
-		options.signal = abortController === null ? null : (abortController || options.navEvent).signal
+		hop.signal = abortController === null ? null : (abortController || hop.navEvent).signal
 
-		if (!await sendInterceptable(options.sourceElement, 'before-fetch', { detail: { options }, cancelable: true }))
+		if (!await sendInterceptable(hop.sourceElement, 'before-fetch', { detail: { hop }, cancelable: true }))
 			throw new FetchAbort()
-		send(options.sourceElement, 'fetch-start', { detail: { options } })
+		send(hop.sourceElement, 'fetch-start', { detail: { hop } })
 
-		const response = await fetch(options.to.href, options)
+		const response = await fetch(hop.to.href, hop)
 		const contentType = response.headers.get('content-type')
 		const mediaType = contentType?.split(';')[0].trim()
 
-		if (canFallback(response, options.navEvent) && !supportsMediaType(mediaType)) {
+		if (canFallback(response, hop.navEvent) && !supportsMediaType(mediaType)) {
 			fallback(response.url)
 			throw new FetchAbort()
 		}
 		if (response.redirected) {
 			const redirectedTo = new URL(response.url)
-			if (redirectedTo.origin !== options.to.origin) {
+			if (redirectedTo.origin !== hop.to.origin) {
 				fallback(response.url)
 				throw new FetchAbort()
 			}
@@ -154,20 +154,20 @@ async function fetchHTML(options) {
 		const doc = parser.parseFromString(text, mediaType)
 		doc.querySelectorAll('noscript').forEach((el) => el.remove())
 
-		if (canFallback(response, options.navEvent) && !enabled(doc)) {
+		if (canFallback(response, hop.navEvent) && !enabled(doc)) {
 			fallback(response.url)
 			throw new FetchAbort()
 		}
 
 		const links = preloadStyles(doc)
 		links.length && (await Promise.all(links)) // todo: signal.aborted
-		send(options.sourceElement, 'fetch-load', { detail: { options } })
+		send(hop.sourceElement, 'fetch-load', { detail: { hop } })
 		return { response, doc }
 	} catch(error) {
-		if (!(error instanceof FetchAbort)) send(options.sourceElement, 'fetch-error', { detail: { options, error } })
+		if (!(error instanceof FetchAbort)) send(hop.sourceElement, 'fetch-error', { detail: { hop, error } })
 		throw error
 	} finally {
-		send(options.sourceElement, 'fetch-end', { detail: { options } })
+		send(hop.sourceElement, 'fetch-end', { detail: { hop } })
 	}
 }
 
@@ -192,11 +192,11 @@ function preloadStyles(doc) {
 		})
 }
 
-async function startViewTransition(navEvent, update, options = {}) {
+async function startViewTransition(navEvent, update, hop = {}) {
 	if (
 		document.startViewTransition &&
 		!navEvent.hasUAVisualTransition &&
-		await sendInterceptable(options.sourceElement, 'before-transition', { detail: { options }, cancelable: true })
+		await sendInterceptable(hop.sourceElement, 'before-transition', { detail: { hop }, cancelable: true })
 	) {
 		viewTransition = document.startViewTransition(update)
 	} else {
@@ -205,14 +205,14 @@ async function startViewTransition(navEvent, update, options = {}) {
 	return viewTransition
 }
 
-async function swap(options) {
-	if (!await sendInterceptable(options.sourceElement, 'before-swap', { detail: { options }, cancelable: true })) return
-	swapRootAttributes(options.doc)
-	swapHeadElements(options.doc)
+async function swap(hop) {
+	if (!await sendInterceptable(hop.sourceElement, 'before-swap', { detail: { hop }, cancelable: true })) return
+	swapRootAttributes(hop.doc)
+	swapHeadElements(hop.doc)
 	withRestoredFocus(() => {
-		replace(document.body, options.doc.body)
+		replace(document.body, hop.doc.body)
 	})
-	send(options.sourceElement, 'after-swap', { detail: { options } })
+	send(hop.sourceElement, 'after-swap', { detail: { hop } })
 }
 
 function swapRootAttributes(doc) {
@@ -284,21 +284,21 @@ function attachShadowRoots(root) {
 	})
 }
 
-async function scroll(options) {
-	if (options.scroll === 'preserve') return
-	if (!await sendInterceptable(options.sourceElement, 'before-scroll', { detail: { options }, cancelable: true })) return
+async function scroll(hop) {
+	if (hop.scroll === 'preserve') return
+	if (!await sendInterceptable(hop.sourceElement, 'before-scroll', { detail: { hop }, cancelable: true })) return
 
 	const isRefresh = (
-		options.from.pathname === new URL(location.href).pathname
-			&& !!options.sourceElement?.closest('[data-hop-type="replace"]')
+		hop.from.pathname === new URL(location.href).pathname
+			&& !!hop.sourceElement?.closest('[data-hop-type="replace"]')
 	)
 	if (isRefresh && document.querySelector('meta[name="hop-refresh-scroll"][content="preserve"]')) return
 
 	// Fix when navigating from a scrolled page in Chrome/WebKit
-	if (['push', 'replace'].includes(options.navEvent.navigationType)) scrollTo(0, 0)
-	options.navEvent.scroll()
+	if (['push', 'replace'].includes(hop.navEvent.navigationType)) scrollTo(0, 0)
+	hop.navEvent.scroll()
 
-	send(options.sourceElement, 'after-scroll', { detail: { options } })
+	send(hop.sourceElement, 'after-scroll', { detail: { hop } })
 }
 
 export function runScripts() {

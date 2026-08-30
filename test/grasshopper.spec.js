@@ -413,16 +413,16 @@ test.describe('Fetch Events', () => {
 			const link = document.querySelector('a[href="/fixtures/two.html"]')
 			const events = []
 			link.addEventListener('hop:before-fetch', (e) => {
-				events.push({ type: 'before-fetch', url: e.detail.options.to.href, target: e.target.tagName })
+				events.push({ type: 'before-fetch', url: e.detail.hop.to.href, target: e.target.tagName })
 			})
 			link.addEventListener('hop:fetch-start', (e) => {
-				events.push({ type: 'fetch-start', url: e.detail.options.to.href, target: e.target.tagName })
+				events.push({ type: 'fetch-start', url: e.detail.hop.to.href, target: e.target.tagName })
 			})
 			link.addEventListener('hop:fetch-load', (e) => {
-				events.push({ type: 'fetch-load', url: e.detail.options.to.href, target: e.target.tagName })
+				events.push({ type: 'fetch-load', url: e.detail.hop.to.href, target: e.target.tagName })
 			})
 			link.addEventListener('hop:fetch-end', (e) => {
-				events.push({ type: 'fetch-end', url: e.detail.options.to.href, target: e.target.tagName })
+				events.push({ type: 'fetch-end', url: e.detail.hop.to.href, target: e.target.tagName })
 			})
 			link.addEventListener('hop:fetch-error', (e) => {
 				events.push({ type: 'fetch-error' })
@@ -479,10 +479,10 @@ test.describe('Fetch Events', () => {
 			const link = document.querySelector('a[href="/fixtures/two.html"]')
 			const events = []
 			link.addEventListener('hop:fetch-error', (e) => {
-				events.push({ type: 'fetch-error', url: e.detail.options.to.href, hasError: !!e.detail.error, target: e.target.tagName })
+				events.push({ type: 'fetch-error', url: e.detail.hop.to.href, hasError: !!e.detail.error, target: e.target.tagName })
 			})
 			link.addEventListener('hop:fetch-end', (e) => {
-				events.push({ type: 'fetch-end', url: e.detail.options.to.href, target: e.target.tagName })
+				events.push({ type: 'fetch-end', url: e.detail.hop.to.href, target: e.target.tagName })
 			})
 			return new Promise(resolve => {
 				document.addEventListener('hop:fetch-end', () => resolve(events), { once: true })
@@ -529,16 +529,16 @@ test.describe('Fetch Events', () => {
 })
 
 test.describe('Intercept Events', () => {
-	test('before-intercept fires with options detail', async ({ page }) => {
+	test('before-intercept fires with hop detail', async ({ page }) => {
 		await page.goto('/')
 		const detail = page.evaluate(() => {
 			return new Promise(resolve => {
 				document.addEventListener('hop:before-intercept', (e) => {
 					resolve({
-						hasOptions: !!e.detail.options,
-						method: e.detail.options.method,
-						url: e.detail.options.to.href,
-						hasSourceElement: !!e.detail.options.sourceElement
+						hasHop: !!e.detail.hop,
+						method: e.detail.hop.method,
+						url: e.detail.hop.to.href,
+						hasSourceElement: !!e.detail.hop.sourceElement
 					})
 				}, { once: true })
 			})
@@ -548,7 +548,7 @@ test.describe('Intercept Events', () => {
 		await expect(page).toHaveTitle('Two')
 
 		const result = await detail
-		expect(result.hasOptions).toBe(true)
+		expect(result.hasHop).toBe(true)
 		expect(result.method).toBe('GET')
 		expect(result.url).toContain('/fixtures/two.html')
 		expect(result.hasSourceElement).toBe(true)
@@ -581,14 +581,14 @@ test.describe('Swap Events', () => {
 			document.addEventListener('hop:before-swap', (e) => {
 				events.push({
 					type: 'before-swap',
-					hasOptions: !!e.detail.options,
+					hasHop: !!e.detail.hop,
 					titleBeforeSwap: document.title
 				})
 			})
 			document.addEventListener('hop:after-swap', (e) => {
 				events.push({
 					type: 'after-swap',
-					hasOptions: !!e.detail.options,
+					hasHop: !!e.detail.hop,
 					titleAfterSwap: document.title
 				})
 			})
@@ -602,9 +602,9 @@ test.describe('Swap Events', () => {
 
 		const result = await events
 		expect(result.map(e => e.type)).toEqual(['before-swap', 'after-swap'])
-		expect(result[0].hasOptions).toBe(true)
+		expect(result[0].hasHop).toBe(true)
 		expect(result[0].titleBeforeSwap).toBe('Test Hub')
-		expect(result[1].hasOptions).toBe(true)
+		expect(result[1].hasHop).toBe(true)
 		expect(result[1].titleAfterSwap).toBe('Two')
 	})
 
@@ -652,7 +652,7 @@ test.describe('Swap Events', () => {
 		const eventFired = page.evaluate(() => {
 			return new Promise(resolve => {
 				document.addEventListener('hop:after-transition', (e) => {
-					resolve({ hasOptions: !!e.detail.options })
+					resolve({ hasHop: !!e.detail.hop })
 				}, { once: true })
 			})
 		})
@@ -661,23 +661,23 @@ test.describe('Swap Events', () => {
 		await expect(page).toHaveTitle('Two')
 
 		const result = await eventFired
-		expect(result.hasOptions).toBe(true)
+		expect(result.hasHop).toBe(true)
 	})
 })
 
 test.describe('Scroll Events', () => {
-	test('before-scroll fires with options detail', async ({ page }) => {
+	test('before-scroll fires with hop detail', async ({ page }) => {
 		await page.goto('/')
 
 		const detail = page.evaluate(() => {
 			return new Promise(resolve => {
 				document.addEventListener('hop:before-scroll', (e) => {
 					resolve({
-						hasOptions: !!e.detail.options,
-						method: e.detail.options.method,
-						url: e.detail.options.to.href,
-						hasFrom: !!e.detail.options.from,
-						fromUrl: e.detail.options.from.href
+						hasHop: !!e.detail.hop,
+						method: e.detail.hop.method,
+						url: e.detail.hop.to.href,
+						hasFrom: !!e.detail.hop.from,
+						fromUrl: e.detail.hop.from.href
 					})
 				}, { once: true })
 			})
@@ -687,25 +687,25 @@ test.describe('Scroll Events', () => {
 		await expect(page).toHaveTitle('Two')
 
 		const result = await detail
-		expect(result.hasOptions).toBe(true)
+		expect(result.hasHop).toBe(true)
 		expect(result.method).toBe('GET')
 		expect(result.url).toContain('/fixtures/two.html')
 		expect(result.hasFrom).toBe(true)
 		expect(result.fromUrl).toContain('/')
 	})
 
-	test('after-scroll fires with options detail', async ({ page }) => {
+	test('after-scroll fires with hop detail', async ({ page }) => {
 		await page.goto('/')
 
 		const detail = page.evaluate(() => {
 			return new Promise(resolve => {
 				document.addEventListener('hop:after-scroll', (e) => {
 					resolve({
-						hasOptions: !!e.detail.options,
-						method: e.detail.options.method,
-						url: e.detail.options.to.href,
-						hasFrom: !!e.detail.options.from,
-						fromUrl: e.detail.options.from.href
+						hasHop: !!e.detail.hop,
+						method: e.detail.hop.method,
+						url: e.detail.hop.to.href,
+						hasFrom: !!e.detail.hop.from,
+						fromUrl: e.detail.hop.from.href
 					})
 				}, { once: true })
 			})
@@ -715,7 +715,7 @@ test.describe('Scroll Events', () => {
 		await expect(page).toHaveTitle('Two')
 
 		const result = await detail
-		expect(result.hasOptions).toBe(true)
+		expect(result.hasHop).toBe(true)
 		expect(result.method).toBe('GET')
 		expect(result.url).toContain('/fixtures/two.html')
 		expect(result.hasFrom).toBe(true)
@@ -729,7 +729,7 @@ test.describe('Scroll Events', () => {
 			return new Promise(resolve => {
 				document.addEventListener('hop:before-scroll', (e) => {
 					e.intercept(async () => {
-						resolve({ intercepted: true, hasOptions: !!e.detail.options })
+						resolve({ intercepted: true, hasHop: !!e.detail.hop })
 					})
 				}, { once: true })
 			})
@@ -738,9 +738,9 @@ test.describe('Scroll Events', () => {
 		await page.click('a[href="/fixtures/two.html"]')
 		await expect(page).toHaveTitle('Two')
 
-		const { intercepted, hasOptions } = await result
+		const { intercepted, hasHop } = await result
 		expect(intercepted).toBe(true)
-		expect(hasOptions).toBe(true)
+		expect(hasHop).toBe(true)
 	})
 
 	test('canceling before-scroll prevents scrolling and after-scroll event', async ({ page }) => {
@@ -807,16 +807,16 @@ test.describe('Lifecycle Event Order', () => {
 		])
 	})
 
-	test('hop:load fires with options detail', async ({ page }) => {
+	test('hop:load fires with hop detail', async ({ page }) => {
 		await page.goto('/')
 
 		const detail = page.evaluate(() => {
 			return new Promise(resolve => {
 				document.addEventListener('hop:load', (e) => {
 					resolve({
-						hasOptions: !!e.detail.options,
-						method: e.detail.options.method,
-						url: e.detail.options.to.href
+						hasHop: !!e.detail.hop,
+						method: e.detail.hop.method,
+						url: e.detail.hop.to.href
 					})
 				}, { once: true })
 			})
@@ -826,7 +826,7 @@ test.describe('Lifecycle Event Order', () => {
 		await expect(page).toHaveTitle('Two')
 
 		const result = await detail
-		expect(result.hasOptions).toBe(true)
+		expect(result.hasHop).toBe(true)
 		expect(result.method).toBe('GET')
 		expect(result.url).toContain('/fixtures/two.html')
 	})
@@ -1101,12 +1101,12 @@ test.describe('Slow responses', () => {
 test.describe('Navigation ID', () => {
 	const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
-	test('options.id is a valid UUID', async ({ page }) => {
+	test('hop.id is a valid UUID', async ({ page }) => {
 		await page.goto('/')
 		const id = page.evaluate(() => {
 			return new Promise(resolve => {
 				document.addEventListener('hop:before-intercept', (e) => {
-					resolve(e.detail.options.id)
+					resolve(e.detail.hop.id)
 				}, { once: true })
 			})
 		})
@@ -1121,10 +1121,10 @@ test.describe('Navigation ID', () => {
 		const result = page.evaluate(() => {
 			return new Promise(resolve => {
 				document.addEventListener('hop:before-fetch', (e) => {
-					const el = e.detail.options.sourceElement
+					const el = e.detail.hop.sourceElement
 					resolve({
 						attr: el.getAttribute('data-hop-id'),
-						id: e.detail.options.id
+						id: e.detail.hop.id
 					})
 				}, { once: true })
 			})
@@ -1157,7 +1157,7 @@ test.describe('Navigation ID', () => {
 		const id = page.evaluate(() => {
 			return new Promise(resolve => {
 				document.addEventListener('hop:before-intercept', (e) => {
-					resolve(e.detail.options.id)
+					resolve(e.detail.hop.id)
 				}, { once: true })
 			})
 		})
@@ -1176,7 +1176,7 @@ test.describe('Navigation ID', () => {
 		const ids = page.evaluate(() => {
 			const ids = []
 			document.addEventListener('hop:before-intercept', (e) => {
-				ids.push(e.detail.options.id)
+				ids.push(e.detail.hop.id)
 			})
 			return new Promise(resolve => {
 				let count = 0
@@ -1203,11 +1203,11 @@ test.describe('Navigation ID', () => {
 		const result = page.evaluate(() => {
 			let interceptId
 			document.addEventListener('hop:before-intercept', (e) => {
-				interceptId = interceptId || e.detail.options.id
+				interceptId = interceptId || e.detail.hop.id
 			})
 			return new Promise(resolve => {
 				document.addEventListener('hop:load', (e) => {
-					resolve({ interceptId, loadId: e.detail.options.id })
+					resolve({ interceptId, loadId: e.detail.hop.id })
 				}, { once: true })
 			})
 		})
