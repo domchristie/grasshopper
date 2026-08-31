@@ -29,9 +29,7 @@ async function onNavigate(ev) {
 	document.querySelector(`[${ID_ATTR}]`)?.removeAttribute(ID_ATTR)
 
 	const canPrecommit = nativePrecommit && ev.cancelable
-	let { id, sourceElement } = ev.info?.hop || {}
-	id = id || crypto.randomUUID()
-	sourceElement = sourceElement || ev.sourceElement
+	let { id = crypto.randomUUID() } = ev.info?.hop || {}
 
 	const hop = {
 		id,
@@ -40,14 +38,13 @@ async function onNavigate(ev) {
 		method: ev.formData ? 'POST' : 'GET',
 		body: ev.formData,
 		headers: { 'x-hop-id': id },
-		sourceElement,
+		sourceElement: ev.sourceElement,
 		...(ev.info?.hop || {}),
 		navEvent: ev // prevent stale navEvent forwarded from a non-precommit flow
 	}
 
 	if (
 		!ev.canIntercept ||
-		hop.to.origin !== hop.from.origin || // WebKit 26.2 fix
 		ev.downloadRequest ||
 		isSamePageHash(hop.from, hop.to, hop.sourceElement) ||
 		!enabled(hop.sourceElement) ||
@@ -101,7 +98,7 @@ async function onNavigate(ev) {
 			if (canFallback(hop.response, ev) && trackedElementsChanged(hop.doc))
 				return stop(), navigation.reload()
 
-			viewTransition = await startViewTransition(ev, async () => {
+			viewTransition = await startViewTransition(async () => {
 				await swap(hop)
 				await scroll(hop)
 			}, hop)
@@ -192,10 +189,10 @@ function preloadStyles(doc) {
 		})
 }
 
-async function startViewTransition(navEvent, update, hop = {}) {
+async function startViewTransition(update, hop = {}) {
 	if (
 		document.startViewTransition &&
-		!navEvent.hasUAVisualTransition &&
+		!hop.navEvent.hasUAVisualTransition &&
 		await sendInterceptable(hop.sourceElement, 'before-transition', { detail: { hop }, cancelable: true })
 	) {
 		viewTransition = document.startViewTransition(update)
@@ -244,18 +241,11 @@ function withRestoredFocus(callback) {
 		if (activeEl instanceof HTMLInputElement || activeEl instanceof HTMLTextAreaElement) {
 			const start = activeEl.selectionStart
 			const end = activeEl.selectionEnd
-			callback()
-			activeEl.focus()
+			callback(), activeEl.focus()
 			if (typeof start === 'number') activeEl.selectionStart = start
 			if (typeof end === 'number') activeEl.selectionEnd = end
-		} else {
-			callback()
-			activeEl.focus()
-		}
-	} else {
-		callback()
-		document.querySelector('[autofocus]')?.focus()
-	}
+		} else callback(), activeEl.focus()
+	} else callback(), document.querySelector('[autofocus]')?.focus()
 }
 
 export function replace(oldEl, newEl) {
@@ -386,12 +376,7 @@ const supportsMediaType = (type) =>
 function trackedElementsChanged(doc) {
 	const oldEls = [...document.querySelectorAll(`[${TRACK_ATTR}="reload"]`)]
 	const newEls = [...doc.querySelectorAll(`[${TRACK_ATTR}="reload"]`)]
-
-	for (const oldEl of oldEls) {
-		const found = newEls.some(newEl => newEl.isEqualNode(oldEl))
-		if (!found) return true
-	}
-	return false
+	return oldEls.some(oldEl => !newEls.some(newEl => newEl.isEqualNode(oldEl)))
 }
 
 const canFallback = (response, navEvent) =>
