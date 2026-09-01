@@ -1235,6 +1235,70 @@ test.describe('Navigation ID', () => {
 	})
 })
 
+test.describe('Navigation Direction', () => {
+	// Awaited before the triggering action, so listener attachment can't race past it.
+	function armDirection(page) {
+		return page.evaluate(() => {
+			window.__hopDirection = new Promise(resolve => {
+				document.addEventListener('hop:before-intercept', (e) => {
+					resolve(e.detail.hop.direction)
+				}, { once: true })
+			})
+		})
+	}
+	function readDirection(page) {
+		return page.evaluate(() => window.__hopDirection)
+	}
+
+	test('push navigation has forward direction', async ({ page }) => {
+		await page.goto('/')
+		await armDirection(page)
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+		expect(await readDirection(page)).toBe('forward')
+	})
+
+	test('replace navigation has none direction', async ({ page }) => {
+		await page.goto('/')
+		await armDirection(page)
+		await page.click('a[href="/fixtures/two.html"][data-hop-type="replace"]')
+		await expect(page).toHaveTitle('Two')
+		expect(await readDirection(page)).toBe('none')
+	})
+
+	test('replace to self has none direction', async ({ page }) => {
+		await page.goto('/')
+		await armDirection(page)
+		await page.click('a[href="/"][data-hop-type="replace"]')
+		await expect(page).toHaveTitle('Test Hub')
+		expect(await readDirection(page)).toBe('none')
+	})
+
+	test('back button traversal has back direction', async ({ page }) => {
+		await page.goto('/')
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+
+		await armDirection(page)
+		await page.goBack()
+		await expect(page).toHaveTitle('Test Hub')
+		expect(await readDirection(page)).toBe('back')
+	})
+
+	test('forward button traversal has forward direction', async ({ page }) => {
+		await page.goto('/')
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+		await page.goBack()
+		await expect(page).toHaveTitle('Test Hub')
+
+		await armDirection(page)
+		await page.goForward()
+		await expect(page).toHaveTitle('Two')
+		expect(await readDirection(page)).toBe('forward')
+	})
+})
+
 test.describe('info.hop Options', () => {
 	test('doc skips fetch and swaps provided document', async ({ page }) => {
 		await page.goto('/')

@@ -38,6 +38,7 @@ async function onNavigate(ev) {
 		body: ev.formData,
 		headers: { 'x-hop-id': id },
 		sourceElement: ev.sourceElement,
+		direction: direction(ev),
 		...(ev.info?.hop || {}),
 		navEvent: ev // prevent stale navEvent forwarded from a non-precommit flow
 	}
@@ -367,6 +368,15 @@ function isSamePageHash(from, to, sourceElement) {
 	if (sourceElement && !sourceElement.getAttribute('href')?.startsWith('#')) return false
 	if (!from.href.includes('#') && !to.href.includes('#')) return false
 	return from.pathname === to.pathname && from.search === to.search
+}
+
+function direction(navEvent) {
+	const { navigationType, destination, sourceElement } = navEvent
+	if (sourceElement?.closest('[data-hop-type="replace"]')) return 'none'
+	if (navigationType === 'push') return 'forward'
+	if (navigationType !== 'traverse') return 'none'
+	const from = navigation.currentEntry.index
+	return destination.index > from ? 'forward' : destination.index < from ? 'back' : 'none'
 }
 
 const supportsMediaType = (type) =>
