@@ -2,8 +2,8 @@ node_modules/
 dist/
 
 # Playwright
-/test-results/
-/playwright-report/
-/blob-report/
-/playwright/.cache/
-/playwright/.auth/
+/test/test-results/
+/test/playwright-report/
+/test/blob-report/
+/test/playwright/.cache/
+/test/playwright/.auth/
