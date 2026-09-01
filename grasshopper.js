@@ -1,10 +1,8 @@
-const DIRECTION_ATTR = 'data-hop-direction'
 const PERSIST_ATTR = 'data-hop-persist'
 const DISABLED_ATTR = 'data-hop'
 const TRACK_ATTR = 'data-hop-track'
 const ID_ATTR = 'data-hop-id'
 const nativePrecommit = !!self.NavigationPrecommitController
-class FetchAbort extends Error {}
 
 let started = false
 let parser
@@ -27,48 +25,37 @@ export function stop() {
 
 async function onNavigate(ev) {
 	abortController?.abort()
-	document.documentElement.removeAttribute(DIRECTION_ATTR)
 	document.querySelector(`[${ID_ATTR}]`)?.removeAttribute(ID_ATTR)
 
-	const from = new URL(location.href)
-	const to = new URL(ev.destination.url)
 	const canPrecommit = nativePrecommit && ev.cancelable
-	let { doc, response, sourceElement, id, direction, scroll } = ev.info?.hop || {}
-	sourceElement = sourceElement ?? ev.sourceElement
-	id = id || crypto.randomUUID()
-	const isSamePage = ev.navigationType === 'reload' || to.pathname === from.pathname
-	direction ||= ev.navigationType === 'traverse'
-		? (ev.destination.index > navigation.currentEntry.index ? 'forward' : 'back')
-		: isSamePage ? 'none' : 'forward'
+	let { id = crypto.randomUUID() } = ev.info?.hop || {}
 
-	const options = {
+	const hop = {
 		id,
-		sourceElement,
-		from,
-		to,
+		from: new URL(location.href),
+		to: new URL(ev.destination.url),
 		method: ev.formData ? 'POST' : 'GET',
 		body: ev.formData,
 		headers: { 'x-hop-id': id },
-		navEvent: ev,
-		direction,
-		scroll,
+		sourceElement: ev.sourceElement,
+		direction: direction(ev),
+		...(ev.info?.hop || {}),
+		navEvent: ev // prevent stale navEvent forwarded from a non-precommit flow
 	}
 
 	if (
 		!ev.canIntercept ||
-		to.origin !== from.origin || // WebKit 26.2 fix
 		ev.downloadRequest ||
-		isSamePageHash(from, to, sourceElement) ||
-		!enabled(sourceElement) ||
-		!send(sourceElement, 'before-intercept', { detail: { options }, cancelable: true})
+		isSamePageHash(hop.from, hop.to, hop.sourceElement) ||
+		!enabled(hop.sourceElement) ||
+		!send(hop.sourceElement, 'before-intercept', { detail: { hop }, cancelable: true })
 	) return
 
-	sourceElement?.setAttribute(ID_ATTR, id)
-	document.documentElement.setAttribute(DIRECTION_ATTR, direction)
+	hop.sourceElement?.setAttribute(ID_ATTR, id)
 
 	if (!canPrecommit && ev.navigationType !== 'traverse') {
 		abortController = null
-		if (!doc) {
+		if (!hop.doc) {
 			ev.preventDefault()
 			abortController = new AbortController()
 			try { await precommitHandler(null) } catch { /* aborted or failed before commit; already prevented */ }
@@ -77,14 +64,14 @@ async function onNavigate(ev) {
 	}
 
 	async function precommitHandler(controller) {
-		if (!doc) ({ response, doc } = await fetchHTML(options))
+		if (!hop.doc) Object.assign(hop, await fetchHTML(hop))
 
 		let history = (
-			from.href === response?.url || sourceElement?.closest('[data-hop-type="replace"]')
+			hop.from.href === hop.response?.url || hop.sourceElement?.closest('[data-hop-type="replace"]')
 				? 'replace'
 				: ev.navigationType
 		)
-		let redirectTo = response?.redirected && response?.url
+		let redirectTo = hop.response?.redirected && hop.response?.url
 
 		if (canPrecommit
 			? redirectTo || history !== ev.navigationType
@@ -92,7 +79,7 @@ async function onNavigate(ev) {
 		)
 			return redirect(controller,
 				redirectTo || ev.destination.url, {
-				history, info: { ...ev.info, hop: { doc, response, sourceElement, id, direction, scroll } }
+				history, info: { ...ev.info, hop }
 			})
 	}
 
@@ -108,23 +95,22 @@ async function onNavigate(ev) {
 				await viewTransition.updateCallbackDone
 			} catch { /* ignore */ }
 
-			if (canFallback(response, ev) && trackedElementsChanged(doc))
+			if (canFallback(hop.response, ev) && trackedElementsChanged(hop.doc))
 				return stop(), navigation.reload()
 
-			viewTransition = await startViewTransition(ev, async () => {
-				await swap(doc, options)
-				await doScroll(options)
-			}, options)
+			viewTransition = await startViewTransition({
+				update: async () => (await swap(hop), await scroll(hop)),
+				types: [hop.direction]
+			}, hop)
 
 			viewTransition.updateCallbackDone.finally(async () => {
 				await runScripts()
-				send(sourceElement, 'load', { detail: { options } })
+				send(hop.sourceElement, 'load', { detail: { hop } })
 			})
 
 			viewTransition.finished.finally(() => {
-				document.documentElement.removeAttribute(DIRECTION_ATTR)
-				sourceElement?.removeAttribute(ID_ATTR)
-				send(sourceElement, 'after-transition', { detail: { options } })
+				hop.sourceElement?.removeAttribute(ID_ATTR)
+				send(hop.sourceElement, 'after-transition', { detail: { hop } })
 				resetViewTransition()
 			})
 
@@ -136,27 +122,27 @@ async function onNavigate(ev) {
 }
 addEventListener('DOMContentLoaded', start)
 
-async function fetchHTML(options) {
+async function fetchHTML(hop) {
 	try {
-		options.signal = abortController === null ? null : (abortController || options.navEvent).signal
+		hop.signal = abortController === null ? null : (abortController || hop.navEvent).signal
 
-		if (!await sendInterceptable(options.sourceElement, 'before-fetch', { detail: { options }, cancelable: true }))
-			throw new FetchAbort()
-		send(options.sourceElement, 'fetch-start', { detail: { options } })
+		if (!await sendInterceptable(hop.sourceElement, 'before-fetch', { detail: { hop }, cancelable: true }))
+			throw new DOMException('before-fetch was cancelled', 'AbortError')
+		send(hop.sourceElement, 'fetch-start', { detail: { hop } })
 
-		const response = await fetch(options.to.href, options)
+		const response = await fetch(hop.to.href, hop)
 		const contentType = response.headers.get('content-type')
 		const mediaType = contentType?.split(';')[0].trim()
 
-		if (canFallback(response, options.navEvent) && !supportsMediaType(mediaType)) {
+		if (canFallback(response, hop.navEvent) && !supportsMediaType(mediaType)) {
 			fallback(response.url)
-			throw new FetchAbort()
+			throw new DOMException(`Unsupported media type: ${mediaType}`, 'NotSupportedError')
 		}
 		if (response.redirected) {
 			const redirectedTo = new URL(response.url)
-			if (redirectedTo.origin !== options.to.origin) {
+			if (redirectedTo.origin !== hop.to.origin) {
 				fallback(response.url)
-				throw new FetchAbort()
+				throw new DOMException(`Redirected to a different origin: ${redirectedTo.origin}`, 'SecurityError')
 			}
 		}
 
@@ -165,20 +151,20 @@ async function fetchHTML(options) {
 		const doc = parser.parseFromString(text, mediaType)
 		doc.querySelectorAll('noscript').forEach((el) => el.remove())
 
-		if (canFallback(response, options.navEvent) && !enabled(doc)) {
+		if (canFallback(response, hop.navEvent) && !enabled(doc)) {
 			fallback(response.url)
-			throw new FetchAbort()
+			throw new DOMException('Destination document has disabled Grasshopper', 'NotAllowedError')
 		}
 
 		const links = preloadStyles(doc)
 		links.length && (await Promise.all(links)) // todo: signal.aborted
-		send(options.sourceElement, 'fetch-load', { detail: { options } })
+		send(hop.sourceElement, 'fetch-load', { detail: { hop } })
 		return { response, doc }
 	} catch(error) {
-		if (!(error instanceof FetchAbort)) send(options.sourceElement, 'fetch-error', { detail: { options, error } })
+		if (!(error instanceof DOMException)) send(hop.sourceElement, 'fetch-error', { detail: { hop, error } })
 		throw error
 	} finally {
-		send(options.sourceElement, 'fetch-end', { detail: { options } })
+		send(hop.sourceElement, 'fetch-end', { detail: { hop } })
 	}
 }
 
@@ -203,36 +189,33 @@ function preloadStyles(doc) {
 		})
 }
 
-async function startViewTransition(navEvent, update, options = {}) {
+async function startViewTransition(options, hop = {}) {
 	if (
 		document.startViewTransition &&
-		!navEvent.hasUAVisualTransition &&
-		await sendInterceptable(options.sourceElement, 'before-transition', { detail: { options }, cancelable: true })
+		!hop.navEvent.hasUAVisualTransition &&
+		await sendInterceptable(hop.sourceElement, 'before-transition', { detail: { hop }, cancelable: true })
 	) {
-		viewTransition = document.startViewTransition(update)
+		viewTransition = document.startViewTransition(options)
 	} else {
 		await update()
 	}
 	return viewTransition
 }
 
-async function swap(doc, options) {
-	if (!await sendInterceptable(options.sourceElement, 'before-swap', { detail: { options }, cancelable: true })) return
-	swapRootAttributes(doc)
-	swapHeadElements(doc)
+async function swap(hop) {
+	if (!await sendInterceptable(hop.sourceElement, 'before-swap', { detail: { hop }, cancelable: true })) return
+	swapRootAttributes(hop.doc)
+	swapHeadElements(hop.doc)
 	withRestoredFocus(() => {
-		replace(document.body, doc.body)
+		replace(document.body, hop.doc.body)
 	})
-	send(options.sourceElement, 'after-swap', { detail: { options } })
+	send(hop.sourceElement, 'after-swap', { detail: { hop } })
 }
 
 function swapRootAttributes(doc) {
 	const currentRoot = document.documentElement
-	const persistedAttrs = [...currentRoot.attributes].filter(
-		({ name }) => (currentRoot.removeAttribute(name), [DIRECTION_ATTR].includes(name))
-	)
-	const attrs = [...doc.documentElement.attributes, ...persistedAttrs]
-	attrs.forEach(({ name, value }) => currentRoot.setAttribute(name, value))
+	for (const { name } of [...currentRoot.attributes]) currentRoot.removeAttribute(name)
+	for (const { name, value } of doc.documentElement.attributes) currentRoot.setAttribute(name, value)
 }
 
 function swapHeadElements(doc) {
@@ -258,18 +241,11 @@ function withRestoredFocus(callback) {
 		if (activeEl instanceof HTMLInputElement || activeEl instanceof HTMLTextAreaElement) {
 			const start = activeEl.selectionStart
 			const end = activeEl.selectionEnd
-			callback()
-			activeEl.focus()
+			callback(), activeEl.focus()
 			if (typeof start === 'number') activeEl.selectionStart = start
 			if (typeof end === 'number') activeEl.selectionEnd = end
-		} else {
-			callback()
-			activeEl.focus()
-		}
-	} else {
-		callback()
-		document.querySelector('[autofocus]')?.focus()
-	}
+		} else callback(), activeEl.focus()
+	} else callback(), document.querySelector('[autofocus]')?.focus()
 }
 
 export function replace(oldEl, newEl) {
@@ -298,21 +274,21 @@ function attachShadowRoots(root) {
 	})
 }
 
-async function doScroll(options) {
-	if (options.scroll === 'preserve') return
-	if (!await sendInterceptable(options.sourceElement, 'before-scroll', { detail: { options }, cancelable: true })) return
+async function scroll(hop) {
+	if (hop.scroll === 'preserve') return
+	if (!await sendInterceptable(hop.sourceElement, 'before-scroll', { detail: { hop }, cancelable: true })) return
 
 	const isRefresh = (
-		options.from.pathname === new URL(location.href).pathname
-			&& !!options.sourceElement?.closest('[data-hop-type="replace"]')
+		hop.from.pathname === new URL(location.href).pathname
+			&& !!hop.sourceElement?.closest('[data-hop-type="replace"]')
 	)
 	if (isRefresh && document.querySelector('meta[name="hop-refresh-scroll"][content="preserve"]')) return
 
 	// Fix when navigating from a scrolled page in Chrome/WebKit
-	if (['push', 'replace'].includes(options.navEvent.navigationType)) scrollTo(0, 0)
-	options.navEvent.scroll()
+	if (['push', 'replace'].includes(hop.navEvent.navigationType)) scrollTo(0, 0)
+	hop.navEvent.scroll()
 
-	send(options.sourceElement, 'after-scroll', { detail: { options } })
+	send(hop.sourceElement, 'after-scroll', { detail: { hop } })
 }
 
 export function runScripts() {
@@ -394,18 +370,22 @@ function isSamePageHash(from, to, sourceElement) {
 	return from.pathname === to.pathname && from.search === to.search
 }
 
+function direction(navEvent) {
+	const { navigationType, destination, sourceElement } = navEvent
+	if (sourceElement?.closest('[data-hop-type="replace"]')) return 'none'
+	if (navigationType === 'push') return 'forward'
+	if (navigationType !== 'traverse') return 'none'
+	const from = navigation.currentEntry.index
+	return destination.index > from ? 'forward' : destination.index < from ? 'back' : 'none'
+}
+
 const supportsMediaType = (type) =>
 	['text/html', 'application/xhtml+xml'].includes(type)
 
 function trackedElementsChanged(doc) {
 	const oldEls = [...document.querySelectorAll(`[${TRACK_ATTR}="reload"]`)]
 	const newEls = [...doc.querySelectorAll(`[${TRACK_ATTR}="reload"]`)]
-
-	for (const oldEl of oldEls) {
-		const found = newEls.some(newEl => newEl.isEqualNode(oldEl))
-		if (!found) return true
-	}
-	return false
+	return oldEls.some(oldEl => !newEls.some(newEl => newEl.isEqualNode(oldEl)))
 }
 
 const canFallback = (response, navEvent) =>

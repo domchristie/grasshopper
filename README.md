@@ -136,7 +136,7 @@ await runScripts()
 
 Events are dispatched on the navigation's source element (typically a link or form submitter) if it exists in the DOM, or the `document`.
 
-All events include an [`options`](#options-object) object in their `detail`.
+All events include a [`hop`](#hop-object) object in their `detail`.
 
 - [`hop:before-intercept`](#hopbefore-intercept)
 - [`hop:before-fetch`](#hopbefore-fetch)
@@ -208,38 +208,28 @@ Fired after the swap is complete and new scripts have executed.
 
 Fired after the view transition finishes.
 
-## Options Object
+## Hop Object
 
-The `options` object is available via `e.detail.options` in all events. It is also passed as the second argument to `fetch()`, so properties like `method`, `headers`, `body`, and `signal` are used directly as fetch options. It contains:
+The `hop` object is available via `e.detail.hop` in all events. It is also passed as the second argument to `fetch()`, so properties like `method`, `headers`, `body`, and `signal` are used directly as fetch options. It contains:
 
 | Property | Type | Description |
 |----------|------|-------------|
 | `id` | `string` | A UUID identifying the navigation. |
 | `sourceElement` | `Element \| undefined` | The element that initiated the navigation (e.g. a link or form submitter). |
+| `direction` | `"forward" \| "back" \| "none"` | `"forward"` for pushes and traversals to a higher history index, `"back"` for traversals to a lower index, `"none"` for replaces and reloads. |
 | `from` | `URL` | The URL of the page at the time of navigation. |
 | `to` | `URL` | The destination URL. |
 | `method` | `string` | `"GET"` or `"POST"`. |
 | `body` | `FormData \| undefined` | The form data, if the navigation was triggered by a form submission. |
 | `headers` | `object` | Request headers. Includes `x-hop-id`. |
 | `signal` | `AbortSignal \| null` | The abort signal for the fetch request. Available from `hop:before-fetch` onwards. |
-| `direction` | `string` | The navigation direction: `"forward"`, `"back"`, or `"none"`. |
 | `navEvent` | `NavigateEvent` | The underlying [NavigateEvent](https://developer.mozilla.org/en-US/docs/Web/API/NavigateEvent). |
-
-## Direction
-
-Each navigation is assigned a direction based on its type:
-
-- **`"forward"`** — push, replace, or forward traversal
-- **`"back"`** — back traversal
-- **`"none"`** — reload, or any navigation to the same pathname
-
-The direction is available as `options.direction` in all events, and set as a `data-hop-direction` attribute on `<html>` during navigation (removed after the transition completes or at the start of the next navigation).
 
 ## Navigation ID
 
 Each navigation is assigned a UUID. The ID is:
 
-- Available as `options.id` in all event details
+- Available as `hop.id` in all event details
 - Set as a `data-hop-id` attribute on the source element during navigation (removed after the transition completes)
 - Sent as an `x-hop-id` header with the fetch request
 
@@ -249,7 +239,7 @@ Each navigation is assigned a UUID. The ID is:
 
 2. **Fetch**: Retrieves the target page. Validates it's HTML. Preloads new stylesheets.
 
-3. **Swap**: Inside a View Transition (when available):
+3. **Swap**: Inside a View Transition (when available), typed with `hop.direction` so CSS can target it via [`:active-view-transition-type()`](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Selectors/:active-view-transition-type):
    - Updates `<html>` attributes
    - Diffs and updates `<head>` elements
    - Replaces `<body>`, then moves `data-hop-persist` elements from old to new
@@ -270,7 +260,6 @@ Requires the [Navigation API](https://caniuse.com/mdn-api_navigation).
 | `data-hop-type` | `"replace"` | Uses `replaceState` instead of `pushState`. |
 | `data-hop-track` | `"reload"` | Triggers full reload if element changes between pages. |
 | `data-hop-id` | UUID | Set automatically on the source element during navigation. |
-| `data-hop-direction` | `"forward"`, `"back"`, `"none"` | Set automatically on `<html>` during navigation. |
 
 ## Meta Tags Reference
 
