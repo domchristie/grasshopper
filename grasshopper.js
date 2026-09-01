@@ -3,7 +3,6 @@ const DISABLED_ATTR = 'data-hop'
 const TRACK_ATTR = 'data-hop-track'
 const ID_ATTR = 'data-hop-id'
 const nativePrecommit = !!self.NavigationPrecommitController
-class FetchAbort extends Error {}
 
 let started = false
 let parser
@@ -127,7 +126,7 @@ async function fetchHTML(hop) {
 		hop.signal = abortController === null ? null : (abortController || hop.navEvent).signal
 
 		if (!await sendInterceptable(hop.sourceElement, 'before-fetch', { detail: { hop }, cancelable: true }))
-			throw new FetchAbort()
+			throw new DOMException('before-fetch was cancelled', 'AbortError')
 		send(hop.sourceElement, 'fetch-start', { detail: { hop } })
 
 		const response = await fetch(hop.to.href, hop)
@@ -136,13 +135,13 @@ async function fetchHTML(hop) {
 
 		if (canFallback(response, hop.navEvent) && !supportsMediaType(mediaType)) {
 			fallback(response.url)
-			throw new FetchAbort()
+			throw new DOMException(`Unsupported media type: ${mediaType}`, 'NotSupportedError')
 		}
 		if (response.redirected) {
 			const redirectedTo = new URL(response.url)
 			if (redirectedTo.origin !== hop.to.origin) {
 				fallback(response.url)
-				throw new FetchAbort()
+				throw new DOMException(`Redirected to a different origin: ${redirectedTo.origin}`, 'SecurityError')
 			}
 		}
 
@@ -153,7 +152,7 @@ async function fetchHTML(hop) {
 
 		if (canFallback(response, hop.navEvent) && !enabled(doc)) {
 			fallback(response.url)
-			throw new FetchAbort()
+			throw new DOMException('Destination document has disabled Grasshopper', 'NotAllowedError')
 		}
 
 		const links = preloadStyles(doc)
@@ -161,7 +160,7 @@ async function fetchHTML(hop) {
 		send(hop.sourceElement, 'fetch-load', { detail: { hop } })
 		return { response, doc }
 	} catch(error) {
-		if (!(error instanceof FetchAbort)) send(hop.sourceElement, 'fetch-error', { detail: { hop, error } })
+		if (!(error instanceof DOMException)) send(hop.sourceElement, 'fetch-error', { detail: { hop, error } })
 		throw error
 	} finally {
 		send(hop.sourceElement, 'fetch-end', { detail: { hop } })
