@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node test/server.js",
-    "test": "playwright test"
+    "test": "playwright test --config=test/playwright.config.js"
   },
   "keywords": [],
   "author": "",
