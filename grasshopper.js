@@ -188,13 +188,13 @@ function preloadStyles(doc) {
 		})
 }
 
-async function startViewTransition(update, hop = {}) {
+async function startViewTransition(options, hop = {}) {
 	if (
 		document.startViewTransition &&
 		!hop.navEvent.hasUAVisualTransition &&
 		await sendInterceptable(hop.sourceElement, 'before-transition', { detail: { hop }, cancelable: true })
 	) {
-		viewTransition = document.startViewTransition(update)
+		viewTransition = document.startViewTransition(options)
 	} else {
 		await update()
 	}
