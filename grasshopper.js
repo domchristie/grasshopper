@@ -98,9 +98,9 @@ async function onNavigate(ev) {
 			if (canFallback(hop.response, ev) && trackedElementsChanged(hop.doc))
 				return stop(), navigation.reload()
 
-			viewTransition = await startViewTransition(async () => {
-				await swap(hop)
-				await scroll(hop)
+			viewTransition = await startViewTransition({
+				update: async () => (await swap(hop), await scroll(hop)),
+				types: [hop.direction]
 			}, hop)
 
 			viewTransition.updateCallbackDone.finally(async () => {

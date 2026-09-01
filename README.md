@@ -216,6 +216,7 @@ The `hop` object is available via `e.detail.hop` in all events. It is also passe
 |----------|------|-------------|
 | `id` | `string` | A UUID identifying the navigation. |
 | `sourceElement` | `Element \| undefined` | The element that initiated the navigation (e.g. a link or form submitter). |
+| `direction` | `"forward" \| "back" \| "none"` | `"forward"` for pushes and traversals to a higher history index, `"back"` for traversals to a lower index, `"none"` for replaces and reloads. |
 | `from` | `URL` | The URL of the page at the time of navigation. |
 | `to` | `URL` | The destination URL. |
 | `method` | `string` | `"GET"` or `"POST"`. |
@@ -238,7 +239,7 @@ Each navigation is assigned a UUID. The ID is:
 
 2. **Fetch**: Retrieves the target page. Validates it's HTML. Preloads new stylesheets.
 
-3. **Swap**: Inside a View Transition (when available):
+3. **Swap**: Inside a View Transition (when available), typed with `hop.direction` so CSS can target it via [`:active-view-transition-type()`](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Selectors/:active-view-transition-type):
    - Updates `<html>` attributes
    - Diffs and updates `<head>` elements
    - Replaces `<body>`, then moves `data-hop-persist` elements from old to new

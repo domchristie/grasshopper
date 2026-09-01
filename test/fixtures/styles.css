@@ -6,3 +6,38 @@ body {
 }
 
 h1 { color: #333; }
+
+::view-transition-group(root) {
+  animation-duration: 0.3s;
+}
+
+html:active-view-transition-type(forward) {
+  &::view-transition-old(root) {
+    animation-name: hop-slide-out-to-left;
+  }
+  &::view-transition-new(root) {
+    animation-name: hop-slide-in-from-right;
+  }
+}
+
+html:active-view-transition-type(back) {
+  &::view-transition-old(root) {
+    animation-name: hop-slide-out-to-right;
+  }
+  &::view-transition-new(root) {
+    animation-name: hop-slide-in-from-left;
+  }
+}
+
+@keyframes hop-slide-out-to-left {
+  to { transform: translateX(-30%); opacity: 0; }
+}
+@keyframes hop-slide-in-from-right {
+  from { transform: translateX(30%); opacity: 0; }
+}
+@keyframes hop-slide-out-to-right {
+  to { transform: translateX(30%); opacity: 0; }
+}
+@keyframes hop-slide-in-from-left {
+  from { transform: translateX(-30%); opacity: 0; }
+}
