@@ -5,6 +5,8 @@ const TRACK_ATTR = 'data-hop-track'
 const ID_ATTR = 'data-hop-id'
 const nativePrecommit = !!self.NavigationPrecommitController
 class FetchAbort extends Error {}
+class UnsupportedMediaTypeError extends Error {}
+UnsupportedMediaTypeError.prototype.name = 'UnsupportedMediaTypeError'
 
 let started = false
 let parser
@@ -148,9 +150,12 @@ async function fetchHTML(options) {
 		const contentType = response.headers.get('content-type')
 		const mediaType = contentType?.split(';')[0].trim()
 
-		if (canFallback(response, options.navEvent) && !supportsMediaType(mediaType)) {
-			fallback(response.url)
-			throw new FetchAbort()
+		if (!supportsMediaType(mediaType)) {
+			if (canFallback(response, options.navEvent)) {
+				fallback(response.url)
+				throw new FetchAbort()
+			}
+			throw new UnsupportedMediaTypeError(`Unsupported response content-type "${contentType}" for ${options.method} ${options.to.href}`)
 		}
 		if (response.redirected) {
 			const redirectedTo = new URL(response.url)

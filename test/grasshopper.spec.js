@@ -526,6 +526,53 @@ test.describe('Fetch Events', () => {
 		expect(await getDocumentId(page)).not.toBe(docId)
 		expect(pageErrors).toEqual([])
 	})
+
+	test('POST response with an unsupported content-type fires fetch-error with UnsupportedMediaTypeError instead of falling back', async ({ page }) => {
+		const pageErrors = []
+		const consoleErrors = []
+		page.on('pageerror', (err) => pageErrors.push(String(err)))
+		page.on('console', (msg) => { if (msg.type() === 'error') consoleErrors.push(msg.text()) })
+
+		await page.goto('/fixtures/form-post.html')
+		const docId = await markDocument(page)
+
+		// POST doesn't fall back to a full-page load (a fetch() has already
+		// submitted the form, so falling back would resubmit it) - so an
+		// unsupported response content-type can't be handled the same way a GET's
+		// is. fetchHTML() checks supportsMediaType() before ever handing the
+		// response to DOMParser, so this fails with a purpose-built error instead
+		// of an accidental one from parser.parseFromString().
+		await page.route('/form', route => route.fulfill({
+			status: 200,
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ ok: true }),
+		}))
+
+		const result = page.evaluate(() => {
+			return new Promise(resolve => {
+				let beforeSwapFired = false
+				document.addEventListener('hop:before-swap', () => { beforeSwapFired = true })
+				document.addEventListener('hop:fetch-error', (e) => {
+					resolve({ name: e.detail.error.name, message: String(e.detail.error), beforeSwapFired })
+				}, { once: true })
+			})
+		})
+
+		await page.click('input[type="submit"]', { noWaitAfter: true })
+
+		const { name, message, beforeSwapFired } = await result
+		expect(name).toBe('UnsupportedMediaTypeError')
+		expect(message).toContain('application/json')
+		expect(beforeSwapFired).toBe(false)
+
+		// Page never navigated/swapped - same document, same content, no fallback.
+		await page.waitForTimeout(300)
+		expect(await getDocumentId(page)).toBe(docId)
+		expect(await page.evaluate(() => document.title)).toBe('Form POST')
+		expect(page.url()).toContain('/fixtures/form-post.html')
+		expect(pageErrors).toEqual([])
+		expect(consoleErrors).toEqual([])
+	})
 })
 
 test.describe('Intercept Events', () => {

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Form POST Unsupported</title>
+	<link rel="icon" href="data:,">
+	<script src="/grasshopper.js"></script>
+	<meta name="hop" content="true" />
+</head>
+<body>
+	<h1>Form POST Unsupported</h1>
+	<p>Submitting this form gets a JSON response back. POST requests can't fall
+	back to a full-page load (that would resubmit the form), so grasshopper
+	throws <code>UnsupportedMediaTypeError</code> instead - visible only via
+	<code>hop:fetch-error</code>, which this page listens for below. The page
+	itself never navigates or changes.</p>
+	<a href="/">Back to Hub</a>
+
+	<form method="post" action="/form-unsupported">
+		<label>Name: <input type="text" name="name" value="test" /></label>
+		<input type="submit" value="Submit POST (expect JSON back)" />
+	</form>
+
+	<pre id="result">(no hop:fetch-error yet)</pre>
+
+	<script>
+		document.addEventListener('hop:fetch-error', (e) => {
+			document.getElementById('result').textContent =
+				`hop:fetch-error fired\nname: ${e.detail.error.name}\nmessage: ${e.detail.error.message}`
+		})
+	</script>
+</body>
+</html>
