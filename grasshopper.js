@@ -197,7 +197,7 @@ async function startViewTransition(options, hop = {}) {
 	) {
 		viewTransition = document.startViewTransition(options)
 	} else {
-		await update()
+		await (typeof options === 'function' ? options : options.update)()
 	}
 	return viewTransition
 }
