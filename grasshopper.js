@@ -370,8 +370,7 @@ function isSamePageHash(from, to, sourceElement) {
 	return from.pathname === to.pathname && from.search === to.search
 }
 
-function direction(navEvent) {
-	const { navigationType, destination, sourceElement } = navEvent
+function direction({ navigationType, destination, sourceElement }) {
 	if (sourceElement?.closest('[data-hop-type="replace"]')) return 'none'
 	if (navigationType === 'push') return 'forward'
 	if (navigationType !== 'traverse') return 'none'
