@@ -115,6 +115,18 @@ const server = createServer(async (req, res) => {
       return res.end(JSON.stringify({ type: 'json', message: 'This is not HTML' }))
     }
 
+    // Content-Disposition: attachment (file download). The media type is also
+    // unsupported, as it is for a real download. isAttachment() runs first, so
+    // the abort reason names the attachment rather than the media type.
+    if (pathname === '/attachment') {
+      log(req, 200, 'attachment', 'test.txt')
+      res.writeHead(200, {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Content-Disposition': 'attachment; filename="test.txt"',
+      })
+      return res.end('This is a downloadable file.')
+    }
+
     // POST returns page without hop meta (tests canFallback)
     if (pathname === '/form-no-hop' && req.method === 'POST') {
       await parseBody(req)
@@ -138,8 +150,20 @@ server.listen(PORT, () => console.log(`http://localhost:${PORT}`))
 
 // Minimal CORS server on PORT+1 for cross-origin redirect testing
 createServer((req, res) => {
-  console.log(`GET localhost:${PORT + 1}/ 200 cors-target`)
-  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Access-Control-Allow-Origin': '*' })
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    // grasshopper sends a custom x-hop-id header, which makes the request
+    // non-simple and triggers a preflight OPTIONS request cross-origin.
+    'Access-Control-Allow-Headers': 'x-hop-id, content-type',
+  }
+  if (req.method === 'OPTIONS') {
+    console.log(`OPTIONS localhost:${PORT + 1}/ 204 cors-preflight`)
+    res.writeHead(204, corsHeaders)
+    return res.end()
+  }
+  console.log(`${req.method} localhost:${PORT + 1}/ 200 cors-target`)
+  res.writeHead(200, { ...corsHeaders, 'Content-Type': 'text/html; charset=utf-8' })
   res.end('<!DOCTYPE html><html><head><title>CORS</title></head><body><h1>Cross-Origin Page</h1><a href="http://localhost:' + PORT + '/">Back</a></body></html>')
 }).listen(PORT + 1, () => console.log(`http://localhost:${PORT + 1} (cors)`))
 

@@ -64,7 +64,7 @@ async function onNavigate(ev) {
 	}
 
 	async function precommitHandler(controller) {
-		if (!hop.doc) Object.assign(hop, await fetchHTML(hop))
+		if (!hop.doc) await loadDoc(hop)
 
 		let history = (
 			hop.from.href === hop.response?.url || hop.sourceElement?.closest('[data-hop-type="replace"]')
@@ -122,7 +122,7 @@ async function onNavigate(ev) {
 }
 addEventListener('DOMContentLoaded', start)
 
-async function fetchHTML(hop) {
+async function loadDoc(hop) {
 	try {
 		hop.signal = abortController === null ? null : (abortController || hop.navEvent).signal
 
@@ -130,36 +130,32 @@ async function fetchHTML(hop) {
 			throw new DOMException('before-fetch was cancelled', 'AbortError')
 		send(hop.sourceElement, 'fetch-start', { detail: { hop } })
 
-		const response = await fetch(hop.to.href, hop)
-		const contentType = response.headers.get('content-type')
+		hop.response = await fetch(hop.to.href, hop)
+
+		const contentType = hop.response.headers.get('content-type')
 		const mediaType = contentType?.split(';')[0].trim()
-
-		if (canFallback(response, hop.navEvent) && !supportsMediaType(mediaType)) {
-			fallback(response.url)
-			throw new DOMException(`Unsupported media type: ${mediaType}`, 'NotSupportedError')
-		}
-		if (response.redirected) {
-			const redirectedTo = new URL(response.url)
-			if (redirectedTo.origin !== hop.to.origin) {
-				fallback(response.url)
-				throw new DOMException(`Redirected to a different origin: ${redirectedTo.origin}`, 'SecurityError')
-			}
+		const contentDisposition = hop.response.headers.get('content-disposition')
+		if (isAttachment(contentDisposition))
+			throw await abort(hop, `Response is an attachment: ${contentDisposition}`, 'NotSupportedError', 'attachment')
+		if (!supportsMediaType(mediaType))
+			throw await abort(hop, `Unsupported media type: ${mediaType}`, 'NotSupportedError', 'unsupported-media-type')
+		if (hop.response.redirected) {
+			const redirectedTo = new URL(hop.response.url)
+			if (redirectedTo.origin !== hop.to.origin)
+				throw await abort(hop, `Redirected to a different origin: ${redirectedTo.origin}`, 'SecurityError', 'cross-origin-redirect')
 		}
 
-		const text = await response.text()
+		const text = await hop.response.text()
 		parser = parser || new DOMParser()
-		const doc = parser.parseFromString(text, mediaType)
-		doc.querySelectorAll('noscript').forEach((el) => el.remove())
+		hop.doc = parser.parseFromString(text, mediaType)
+		hop.doc.querySelectorAll('noscript').forEach((el) => el.remove())
 
-		if (canFallback(response, hop.navEvent) && !enabled(doc)) {
-			fallback(response.url)
-			throw new DOMException('Destination document has disabled Grasshopper', 'NotAllowedError')
-		}
+		if (!enabled(hop.doc))
+			throw await abort(hop, 'Destination document has disabled Grasshopper', 'NotAllowedError', 'disabled')
 
-		const links = preloadStyles(doc)
+		const links = preloadStyles(hop.doc)
 		links.length && (await Promise.all(links)) // todo: signal.aborted
 		send(hop.sourceElement, 'fetch-load', { detail: { hop } })
-		return { response, doc }
 	} catch(error) {
 		if (!(error instanceof DOMException)) send(hop.sourceElement, 'fetch-error', { detail: { hop, error } })
 		throw error
@@ -381,10 +377,21 @@ function direction({ navigationType, destination, sourceElement }) {
 const supportsMediaType = (type) =>
 	['text/html', 'application/xhtml+xml'].includes(type)
 
+const isAttachment = (contentDisposition) =>
+	/^\s*attachment\b/i.test(contentDisposition || '')
+
 function trackedElementsChanged(doc) {
 	const oldEls = [...document.querySelectorAll(`[${TRACK_ATTR}="reload"]`)]
 	const newEls = [...doc.querySelectorAll(`[${TRACK_ATTR}="reload"]`)]
 	return oldEls.some(oldEl => !newEls.some(newEl => newEl.isEqualNode(oldEl)))
+}
+
+async function abort(hop, message, name, reason) {
+	const error = new DOMException(message, name)
+	if (await sendInterceptable(hop.sourceElement, 'before-fallback', { detail: { hop, error, reason }, cancelable: true })) {
+		if (canFallback(hop.response, hop.navEvent)) fallback(hop.response?.url || hop.to.href)
+	}
+	return error
 }
 
 const canFallback = (response, navEvent) =>

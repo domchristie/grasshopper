@@ -143,6 +143,7 @@ All events include a [`hop`](#hop-object) object in their `detail`.
 - [`hop:fetch-start`](#hopfetch-start)
 - [`hop:fetch-load`](#hopfetch-load)
 - [`hop:fetch-error`](#hopfetch-error)
+- [`hop:before-fallback`](#hopbefore-fallback)
 - [`hop:fetch-end`](#hopfetch-end)
 - [`hop:before-transition`](#hopbefore-transition)
 - [`hop:before-swap`](#hopbefore-swap)
@@ -155,6 +156,11 @@ All events include a [`hop`](#hop-object) object in their `detail`.
 ### Interceptable events
 
 **Interceptable** events expose an `e.intercept(callback)` method. The callback is an async function that runs before the default behavior proceeds. All `before-*` events are cancelable and interceptable, apart from `hop:before-intercept`, which is only cancelable.
+
+Cancel in one of two ways:
+
+- Call `e.preventDefault()` **in the listener** to cancel immediately. The intercept callback does not run.
+- Call `e.preventDefault()` **inside the intercept callback** to cancel after async work. The callback runs first, then the default behavior is skipped.
 
 ### `hop:before-intercept`
 
@@ -175,6 +181,36 @@ Fired after the page has been fetched and new stylesheets have been preloaded.
 ### `hop:fetch-error`
 
 Fired when the fetch throws an error (e.g. network failure). Includes the error object in `e.detail.error`. The navigation is then aborted — the URL and page content remain unchanged, and a `navigateerror` event fires on `window.navigation`, which can be used to display an error message. (In browsers without precommit support, a failed fetch during a back/forward traversal cannot un-commit the URL: `navigateerror` still fires, but the address bar may show the destination URL.)
+
+### `hop:before-fallback`
+
+Fired when grasshopper will not swap the response, just before it performs a standard (unintercepted) request. `e.detail.reason` says why:
+
+| Reason | Description |
+|--------|-------------|
+| `attachment` | The response has a `Content-Disposition: attachment` header. `hop.response` has an unread body. |
+| `unsupported-media-type` | The response is not `text/html` or `application/xhtml+xml`. `hop.response` has an unread body. |
+| `cross-origin-redirect` | The response redirected to a different origin. `hop.response` has an unread body. |
+| `disabled` | The destination document does not opt in with `<meta name="hop" content="true">`. The body is already read — use `hop.doc`. |
+
+The default behavior is a full browser navigation to the response URL. Cancel to prevent it and handle the response yourself:
+
+```js
+document.addEventListener('hop:before-fallback', (e) => {
+  if (e.detail.reason !== 'attachment') return
+  e.intercept(async () => { // keeps the response readable
+    const blob = await e.detail.hop.response.blob()
+    save(blob)
+    e.preventDefault() // skips the browser navigation
+  })
+})
+```
+
+Cancelling on its own is enough to skip the navigation. Intercept as well to read the response: the body is torn down once the navigation ends, so reads outside the callback fail with an `AbortError`.
+
+`e.detail.error` holds the `DOMException` that aborts the navigation. It is thrown whether or not you cancel.
+
+A form `POST` whose response is not a redirect has no fallback to cancel. The event still fires, and the navigation stops.
 
 ### `hop:fetch-end`
 
@@ -223,6 +259,8 @@ The `hop` object is available via `e.detail.hop` in all events. It is also passe
 | `body` | `FormData \| undefined` | The form data, if the navigation was triggered by a form submission. |
 | `headers` | `object` | Request headers. Includes `x-hop-id`. |
 | `signal` | `AbortSignal \| null` | The abort signal for the fetch request. Available from `hop:before-fetch` onwards. |
+| `response` | `Response \| undefined` | The fetch response. Available from `hop:before-fallback` and `hop:fetch-load` onwards. |
+| `doc` | `Document \| undefined` | The parsed destination document. Available from `hop:fetch-load` onwards. |
 | `navEvent` | `NavigateEvent` | The underlying [NavigateEvent](https://developer.mozilla.org/en-US/docs/Web/API/NavigateEvent). |
 
 ## Navigation ID

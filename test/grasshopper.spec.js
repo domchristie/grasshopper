@@ -238,12 +238,46 @@ test.describe('Fallback', () => {
 	})
 
 	test('unsupported content type triggers fallback', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
 		await page.goto('/')
 		const docId = await markDocument(page)
 		await page.click('a[href="/unsupported"]')
 		// JSON response triggers fallback - browser shows raw JSON
 		await page.waitForURL('/unsupported')
 		expect(await getDocumentId(page)).not.toBe(docId)
+		// Regression check: abort() must be awaited so its throw halts fetchHTML,
+		// rather than rejecting on its own as an unhandled error.
+		expect(pageErrors).toEqual([])
+	})
+
+	test('content-disposition attachment triggers fallback', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.goto('/')
+		const docId = await markDocument(page)
+		const downloadPromise = page.waitForEvent('download')
+		await page.click('a[href="/attachment"]')
+		// Attachment response triggers fallback - browser downloads the file natively
+		// instead of navigating, so the document (and its URL) stay unchanged.
+		const download = await downloadPromise
+		expect(download.suggestedFilename()).toBe('test.txt')
+		expect(await getDocumentId(page)).toBe(docId)
+		expect(pageErrors).toEqual([])
+	})
+
+	test('cross-origin redirect triggers fallback', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.goto('/')
+		const docId = await markDocument(page)
+		await page.click('a[href="/redirect/cors"]')
+		await page.waitForURL(/localhost:3001/)
+		expect(await getDocumentId(page)).not.toBe(docId)
+		expect(pageErrors).toEqual([])
 	})
 
 	test('external link falls back to full browser navigation', async ({ page }) => {
@@ -255,19 +289,124 @@ test.describe('Fallback', () => {
 	})
 
 	test('link to no-hop page triggers fallback', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
 		await page.goto('/')
 		const docId = await markDocument(page)
 		await page.click('a[href="/fixtures/no-hop.html"]')
 		await expect(page).toHaveTitle('No Hop')
 		expect(await getDocumentId(page)).not.toBe(docId)
+		expect(pageErrors).toEqual([])
 	})
 
-	test('POST to no-hop page avoids fallback', async ({ page }) => {
+	// Accepted gap: a POST whose response isn't a redirect can't be resubmitted by
+	// a full-page navigation, so canFallback() is false here. hop:before-fallback
+	// still fires and the disabled check still throws, but with no fallback and no
+	// swap the navigation is just silently cancelled - the page stays exactly where
+	// it was, on the form page that submitted it.
+	test('POST to no-hop page is silently cancelled (no fallback, no swap)', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
 		await page.goto('/fixtures/form-no-hop.html')
 		const docId = await markDocument(page)
-		await page.click('input[type="submit"]')
-		await expect(page).toHaveTitle('No Hop')
+		const url = page.url()
+
+		// The navigation is cancelled with no history entry and no frame load, so
+		// Playwright's navigation-aware waiting (click()'s default wait, and
+		// expect().toHaveTitle()'s polling) never settles here. Trigger the
+		// submit with a raw DOM click and bridge the resulting hop:before-fallback
+		// back to Node instead of relying on either.
+		let resolveDetail
+		const detail = new Promise((r) => (resolveDetail = r))
+		await page.exposeFunction('__reportFallback', (d) => resolveDetail(d))
+		await page.evaluate(() => {
+			document.addEventListener('hop:before-fallback', (e) => {
+				window.__reportFallback({ reason: e.detail.reason })
+			}, { once: true })
+		})
+
+		await page.evaluate(() => document.querySelector('input[type="submit"]').click())
+		expect(await detail).toEqual({ reason: 'disabled' })
+
+		expect(page.url()).toBe(url)
+		expect(await page.evaluate(() => document.title)).toBe('Form No Hop')
 		expect(await getDocumentId(page)).toBe(docId)
+		expect(pageErrors).toEqual([])
+	})
+})
+
+test.describe('hop:before-fallback', () => {
+	// The event fires just before a real full-page navigation, which would tear down
+	// a page.evaluate()-hosted Promise mid-flight. Bridge the detail back to Node via
+	// exposeFunction instead, so it survives that navigation.
+	async function watchFallback(page) {
+		let resolveDetail
+		const detail = new Promise((r) => (resolveDetail = r))
+		await page.exposeFunction('__reportFallback', (d) => resolveDetail(d))
+		await page.evaluate(() => {
+			document.addEventListener('hop:before-fallback', (e) => {
+				window.__reportFallback({
+					reason: e.detail.reason,
+					hasHop: !!e.detail.hop,
+					hasError: !!e.detail.error,
+				})
+			}, { once: true })
+		})
+		return { detail }
+	}
+
+	test('fires with reason "unsupported-media-type"', async ({ page }) => {
+		await page.goto('/')
+		const { detail } = await watchFallback(page)
+		await page.click('a[href="/unsupported"]')
+		expect(await detail).toEqual({ reason: 'unsupported-media-type', hasHop: true, hasError: true })
+	})
+
+	test('fires with reason "attachment"', async ({ page }) => {
+		await page.goto('/')
+		const { detail } = await watchFallback(page)
+		const downloadPromise = page.waitForEvent('download')
+		await page.click('a[href="/attachment"]')
+		await downloadPromise
+		expect(await detail).toEqual({ reason: 'attachment', hasHop: true, hasError: true })
+	})
+
+	test('fires with reason "cross-origin-redirect"', async ({ page }) => {
+		await page.goto('/')
+		const { detail } = await watchFallback(page)
+		await page.click('a[href="/redirect/cors"]')
+		expect(await detail).toEqual({ reason: 'cross-origin-redirect', hasHop: true, hasError: true })
+	})
+
+	test('fires with reason "disabled"', async ({ page }) => {
+		await page.goto('/')
+		const { detail } = await watchFallback(page)
+		await page.click('a[href="/fixtures/no-hop.html"]')
+		expect(await detail).toEqual({ reason: 'disabled', hasHop: true, hasError: true })
+	})
+
+	test('cancelling it skips the fallback navigation', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.goto('/')
+		const docId = await markDocument(page)
+		const url = page.url()
+
+		await page.evaluate(() => {
+			document.addEventListener('hop:before-fallback', (e) => {
+				e.preventDefault()
+			})
+		})
+
+		await page.click('a[href="/unsupported"]')
+		await page.waitForTimeout(500)
+		// The fallback was skipped because the event was cancelled - stay put
+		expect(page.url()).toBe(url)
+		expect(await getDocumentId(page)).toBe(docId)
+		expect(pageErrors).toEqual([])
 	})
 })
 
