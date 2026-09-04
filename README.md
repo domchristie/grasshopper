@@ -141,6 +141,7 @@ All events include a [`hop`](#hop-object) object in their `detail`.
 - [`hop:before-intercept`](#hopbefore-intercept)
 - [`hop:before-fetch`](#hopbefore-fetch)
 - [`hop:fetch-start`](#hopfetch-start)
+- [`hop:before-response`](#hopbefore-response)
 - [`hop:fetch-load`](#hopfetch-load)
 - [`hop:fetch-error`](#hopfetch-error)
 - [`hop:before-fallback`](#hopbefore-fallback)
@@ -173,6 +174,10 @@ Fired before the page is fetched. Cancel to skip the fetch entirely and abort th
 ### `hop:fetch-start`
 
 Fired immediately before the fetch request is made (after `hop:before-fetch` has resolved).
+
+### `hop:before-response`
+
+Fired when the `fetch` completes, but before the response is handled and the body is read. Cancel to abort the navigation.
 
 ### `hop:fetch-load`
 
@@ -259,7 +264,7 @@ The `hop` object is available via `e.detail.hop` in all events. It is also passe
 | `body` | `FormData \| undefined` | The form data, if the navigation was triggered by a form submission. |
 | `headers` | `object` | Request headers. Includes `x-hop-id`. |
 | `signal` | `AbortSignal \| null` | The abort signal for the fetch request. Available from `hop:before-fetch` onwards. |
-| `response` | `Response \| undefined` | The fetch response. Available from `hop:before-fallback` and `hop:fetch-load` onwards. |
+| `response` | `Response \| undefined` | The fetch response. Available from `hop:before-response` onwards. |
 | `doc` | `Document \| undefined` | The parsed destination document. Available from `hop:fetch-load` onwards. |
 | `navEvent` | `NavigateEvent` | The underlying [NavigateEvent](https://developer.mozilla.org/en-US/docs/Web/API/NavigateEvent). |
 

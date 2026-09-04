@@ -132,6 +132,14 @@ async function loadDoc(hop) {
 
 		hop.response = await fetch(hop.to.href, hop)
 
+		if (!await sendInterceptable(hop.sourceElement, 'before-response', { detail: { hop }, cancelable: true }))
+			throw new DOMException('before-response was cancelled', 'AbortError')
+
+		if (hop.signal?.aborted)
+			throw new DOMException('Navigation was aborted', 'AbortError')
+
+		if ([204, 205].includes(hop.response.status))
+			throw new DOMException(`Response status is: ${hop.response.status}`, 'AbortError')
 		const contentType = hop.response.headers.get('content-type')
 		const mediaType = contentType?.split(';')[0].trim()
 		const contentDisposition = hop.response.headers.get('content-disposition')
