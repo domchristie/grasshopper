@@ -179,6 +179,8 @@ Fired immediately before the fetch request is made (after `hop:before-fetch` has
 
 Fired when the `fetch` completes, but before the response is handled and the body is read. Cancel to abort the navigation.
 
+Use `hop.response.clone()` if a listener needs the body, to prevent future read errors.
+
 ### `hop:fetch-load`
 
 Fired after the page has been fetched and new stylesheets have been preloaded.
