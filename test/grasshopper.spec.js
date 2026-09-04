@@ -887,7 +887,11 @@ test.describe('hop:before-response', () => {
 
 	// These cases end in a real full-page navigation, which would tear down a
 	// page.evaluate()-hosted Promise mid-flight. Bridge back to Node via
-	// exposeFunction so the record survives it.
+	// exposeFunction so the record survives it. That bridge delivers each event
+	// asynchronously, so assertions on the returned array must poll for it to
+	// settle rather than read it the instant a navigation or title change
+	// resolves, unless the test has already waited long enough for the events
+	// to have arrived.
 	async function watchOrder(page, types) {
 		const order = []
 		await page.exposeFunction('__reportOrder', (type) => order.push(type))
@@ -908,7 +912,7 @@ test.describe('hop:before-response', () => {
 		await page.click('a[href="/unsupported"]')
 		await page.waitForURL('/unsupported')
 
-		expect(order).toEqual(['before-response', 'before-fallback'])
+		await expect.poll(() => order).toEqual(['before-response', 'before-fallback'])
 	})
 
 	test('fires for a destination page that has disabled grasshopper', async ({ page }) => {
@@ -920,7 +924,7 @@ test.describe('hop:before-response', () => {
 		await page.click('a[href="/fixtures/no-hop.html"]')
 		await expect(page).toHaveTitle('No Hop')
 
-		expect(order).toEqual(['before-response', 'before-fallback'])
+		await expect.poll(() => order).toEqual(['before-response', 'before-fallback'])
 	})
 
 	test('cancelling it for an unsupported media type skips the fallback navigation', async ({ page }) => {

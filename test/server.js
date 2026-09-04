@@ -119,7 +119,7 @@ const server = createServer(async (req, res) => {
     if (pathname === '/reset-content') {
       if (req.method === 'POST') await parseBody(req)
       log(req, 205, 'empty', 'reset content')
-      res.writeHead(205)
+      res.writeHead(205, { 'Content-Length': 0 })
       return res.end()
     }
 
