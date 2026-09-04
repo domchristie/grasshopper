@@ -132,14 +132,20 @@ async function loadDoc(hop) {
 
 		hop.response = await fetch(hop.to.href, hop)
 
-		if (!await sendInterceptable(hop.sourceElement, 'before-response', { detail: { hop }, cancelable: true }))
+		if (!await sendInterceptable(hop.sourceElement, 'before-response', { detail: { hop }, cancelable: true })) {
+			cancelBody(hop.response.body)
 			throw new DOMException('before-response was cancelled', 'AbortError')
+		}
 
-		if (hop.signal?.aborted)
+		if (hop.signal?.aborted) {
+			cancelBody(hop.response.body)
 			throw new DOMException('Navigation was aborted', 'AbortError')
+		}
 
-		if ([204, 205].includes(hop.response.status))
+		if ([204, 205].includes(hop.response.status)) {
+			cancelBody(hop.response.body)
 			throw new DOMException(`Response status is: ${hop.response.status}`, 'AbortError')
+		}
 		const contentType = hop.response.headers.get('content-type')
 		const mediaType = contentType?.split(';')[0].trim()
 		const contentDisposition = hop.response.headers.get('content-disposition')
@@ -398,6 +404,7 @@ async function abort(hop, message, name, reason) {
 	const error = new DOMException(message, name)
 	if (await sendInterceptable(hop.sourceElement, 'before-fallback', { detail: { hop, error, reason }, cancelable: true })) {
 		if (canFallback(hop.response, hop.navEvent)) fallback(hop.response?.url || hop.to.href)
+		else cancelBody(hop.response?.body)
 	}
 	return error
 }
@@ -406,6 +413,8 @@ const canFallback = (response, navEvent) =>
 	response?.redirected || !navEvent.formData
 
 const fallback = (to) => (stop(), navigation.navigate(to))
+
+const cancelBody = (body) => body?.cancel().catch(() => {})
 
 function redirect(controller, to, options = {}) {
 	try {

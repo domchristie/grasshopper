@@ -408,6 +408,47 @@ test.describe('hop:before-fallback', () => {
 		expect(await getDocumentId(page)).toBe(docId)
 		expect(pageErrors).toEqual([])
 	})
+
+	// A form POST whose response is not a redirect has no fallback to cancel
+	// (canFallback() is false), so grasshopper cancels the response body itself
+	// instead of leaking it. Unlike the "disabled" reason above, the
+	// unsupported-media-type check runs before the body is read, so this is
+	// the reason that actually exercises the cancellation.
+	test('a POST with no fallback cancels the response body', async ({ page }) => {
+		await page.goto('/fixtures/form-unsupported.html')
+
+		// The navigation is cancelled, so no frame load ever settles. Wait on the
+		// hop:fetch-end event instead of Playwright's navigation-aware waiting.
+		const ended = page.evaluate(() => new Promise(resolve => {
+			document.addEventListener('hop:before-fallback', (e) => {
+				window.__stashedResponse = e.detail.hop.response
+			}, { once: true })
+			document.addEventListener('hop:fetch-end', () => resolve(), { once: true })
+		}))
+		await page.evaluate(() => document.querySelector('input[type="submit"]').click())
+		await ended
+
+		expect(await page.evaluate(() => window.__stashedResponse.bodyUsed)).toBe(true)
+	})
+
+	test('cancelling it inside an intercept keeps the response body readable', async ({ page }) => {
+		await page.goto('/')
+
+		let resolveText
+		const text = new Promise((r) => (resolveText = r))
+		await page.exposeFunction('__reportText', (t) => resolveText(t))
+		await page.evaluate(() => {
+			document.addEventListener('hop:before-fallback', (e) => {
+				e.intercept(async () => { // keeps the response readable
+					window.__reportText(await e.detail.hop.response.text())
+					e.preventDefault()
+				})
+			}, { once: true })
+		})
+
+		await page.click('a[href="/attachment"]')
+		expect(await text).toContain('This is a downloadable file.')
+	})
 })
 
 test.describe('Empty Responses', () => {

@@ -125,6 +125,7 @@ const server = createServer(async (req, res) => {
 
     // Unsupported content type
     if (pathname === '/unsupported') {
+      if (req.method === 'POST') await parseBody(req)
       log(req, 200, 'json', 'application/json')
       res.writeHead(200, { 'Content-Type': 'application/json' })
       return res.end(JSON.stringify({ type: 'json', message: 'This is not HTML' }))
