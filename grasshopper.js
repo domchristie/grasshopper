@@ -8,6 +8,7 @@ let started = false
 let parser
 let abortController
 let viewTransition
+let bypass
 
 export function start() {
 	if (started || !enabled() || !('navigation' in window)) return
@@ -24,6 +25,7 @@ export function stop() {
 }
 
 async function onNavigate(ev) {
+	if (bypass) return
 	abortController?.abort(new DOMException('Navigation was superseded', 'AbortError'))
 	abortController = new AbortController()
 	document.querySelector(`[${ID_ATTR}]`)?.removeAttribute(ID_ATTR)
@@ -96,7 +98,7 @@ async function onNavigate(ev) {
 			} catch { /* ignore */ }
 
 			if (canFallback(hop.response, ev) && trackedElementsChanged(hop.doc))
-				return stop(), navigation.reload()
+				return withBypass(() => location.reload())
 
 			viewTransition = await startViewTransition({
 				update: async () => (await swap(hop), await scroll(hop)),
@@ -148,13 +150,13 @@ async function loadDoc(hop) {
 		const mediaType = contentType?.split(';')[0].trim()
 		const contentDisposition = hop.response.headers.get('content-disposition')
 		if (isAttachment(contentDisposition))
-			throw await abort(hop, `Response is an attachment: ${contentDisposition}`, 'NotSupportedError', 'attachment')
+			throw await tryFallback(hop, `Response is an attachment: ${contentDisposition}`, 'NotSupportedError', 'attachment')
 		if (!supportsMediaType(mediaType))
-			throw await abort(hop, `Unsupported media type: ${mediaType}`, 'NotSupportedError', 'unsupported-media-type')
+			throw await tryFallback(hop, `Unsupported media type: ${mediaType}`, 'NotSupportedError', 'unsupported-media-type')
 		if (hop.response.redirected) {
 			const redirectedTo = new URL(hop.response.url)
 			if (redirectedTo.origin !== hop.to.origin)
-				throw await abort(hop, `Redirected to a different origin: ${redirectedTo.origin}`, 'SecurityError', 'cross-origin-redirect')
+				throw await tryFallback(hop, `Redirected to a different origin: ${redirectedTo.origin}`, 'SecurityError', 'cross-origin-redirect')
 		}
 
 		const text = await hop.response.text()
@@ -163,7 +165,7 @@ async function loadDoc(hop) {
 		hop.doc.querySelectorAll('noscript').forEach((el) => el.remove())
 
 		if (!enabled(hop.doc))
-			throw await abort(hop, 'Destination document has disabled Grasshopper', 'NotAllowedError', 'disabled')
+			throw await tryFallback(hop, 'Destination document has disabled Grasshopper', 'NotAllowedError', 'disabled')
 
 		const links = preloadStyles(hop.doc)
 		links.length && (await Promise.all(links)) // todo: signal.aborted
@@ -398,11 +400,14 @@ function trackedElementsChanged(doc) {
 	return oldEls.some(oldEl => !newEls.some(newEl => newEl.isEqualNode(oldEl)))
 }
 
-async function abort(hop, message, name, reason) {
+async function tryFallback(hop, message, name, reason) {
 	const error = new DOMException(message, name)
-	if (await sendInterceptable(hop.sourceElement, 'before-fallback', { detail: { hop, error, reason }, cancelable: true })) {
-		if (canFallback(hop.response, hop.navEvent)) fallback(hop.response?.url || hop.to.href)
-		else cancelBody(hop.response?.body)
+	try {
+		if (await sendInterceptable(hop.sourceElement, 'before-fallback', { detail: { hop, error, reason }, cancelable: true })
+			&& canFallback(hop.response, hop.navEvent))
+			fallback(hop.response?.url || hop.to.href)
+	} finally {
+		cancelBody(hop.response?.body)
 	}
 	return error
 }
@@ -410,7 +415,12 @@ async function abort(hop, message, name, reason) {
 const canFallback = (response, navEvent) =>
 	response?.redirected || !navEvent.formData
 
-const fallback = (to) => (stop(), navigation.navigate(to))
+function withBypass(navigate) {
+	bypass = true
+	try { return navigate() } finally { bypass = false }
+}
+
+const fallback = (to) => withBypass(() => location.assign(to))
 
 const cancelBody = (body) => body?.cancel().catch(() => {})
 

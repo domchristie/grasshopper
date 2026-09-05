@@ -247,8 +247,8 @@ test.describe('Fallback', () => {
 		// JSON response triggers fallback - browser shows raw JSON
 		await page.waitForURL('/unsupported')
 		expect(await getDocumentId(page)).not.toBe(docId)
-		// Regression check: abort() must be awaited so its throw halts fetchHTML,
-		// rather than rejecting on its own as an unhandled error.
+		// Regression check: the fallback failure must surface as an ordinary
+		// awaited throw, in order, not as an unhandled rejection on the page.
 		expect(pageErrors).toEqual([])
 	})
 
@@ -264,6 +264,27 @@ test.describe('Fallback', () => {
 		// instead of navigating, so the document (and its URL) stay unchanged.
 		const download = await downloadPromise
 		expect(download.suggestedFilename()).toBe('test.txt')
+		expect(await getDocumentId(page)).toBe(docId)
+		expect(pageErrors).toEqual([])
+	})
+
+	test('grasshopper still intercepts after an attachment download', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.goto('/')
+		const docId = await markDocument(page)
+		const downloadPromise = page.waitForEvent('download')
+		await page.click('a[href="/attachment"]')
+		// This is the fallback that used to call stop(), a permanent teardown.
+		await downloadPromise
+		// The download does not replace the document, so it survives.
+		expect(await getDocumentId(page)).toBe(docId)
+
+		// A normal link click follows. If grasshopper were still stopped, this
+		// would be a full browser navigation, and the document would be replaced.
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
 		expect(await getDocumentId(page)).toBe(docId)
 		expect(pageErrors).toEqual([])
 	})
@@ -998,7 +1019,8 @@ test.describe('hop:before-response', () => {
 		await page.waitForTimeout(500)
 
 		expect(order).toEqual([])
-		// Same document survived, proving fallback()'s stop() was not called
+		// Same document survived: the superseded hop's fallback() did not run,
+		// so it did not consume the bypass or hijack the browser
 		expect(await getDocumentId(page)).toBe(docId)
 		expect(pageErrors).toEqual([])
 	})
