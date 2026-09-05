@@ -265,7 +265,7 @@ The `hop` object is available via `e.detail.hop` in all events. It is also passe
 | `method` | `string` | `"GET"` or `"POST"`. |
 | `body` | `FormData \| undefined` | The form data, if the navigation was triggered by a form submission. |
 | `headers` | `object` | Request headers. Includes `x-hop-id`. |
-| `signal` | `AbortSignal \| null` | The abort signal for the fetch request. Available from `hop:before-fetch` onwards. |
+| `signal` | `AbortSignal` | The abort signal for the fetch request. Available from `hop:before-intercept` onwards. |
 | `response` | `Response \| undefined` | The fetch response. Available from `hop:before-response` onwards. |
 | `doc` | `Document \| undefined` | The parsed destination document. Available from `hop:fetch-load` onwards. |
 | `navEvent` | `NavigateEvent` | The underlying [NavigateEvent](https://developer.mozilla.org/en-US/docs/Web/API/NavigateEvent). |

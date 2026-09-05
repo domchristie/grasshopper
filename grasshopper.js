@@ -19,12 +19,13 @@ export function start() {
 export function stop() {
 	if (!started) return
 	navigation.removeEventListener('navigate', onNavigate)
-	abortController?.abort()
+	abortController?.abort(new DOMException('Stopped', 'AbortError'))
 	started = false
 }
 
 async function onNavigate(ev) {
-	abortController?.abort()
+	abortController?.abort(new DOMException('Navigation was superseded', 'AbortError'))
+	abortController = new AbortController()
 	document.querySelector(`[${ID_ATTR}]`)?.removeAttribute(ID_ATTR)
 
 	const canPrecommit = nativePrecommit && ev.cancelable
@@ -40,7 +41,9 @@ async function onNavigate(ev) {
 		sourceElement: ev.sourceElement,
 		direction: direction(ev),
 		...(ev.info?.hop || {}),
-		navEvent: ev // prevent stale navEvent forwarded from a non-precommit flow
+		// both override a stale value forwarded from a non-precommit flow
+		navEvent: ev,
+		signal: AbortSignal.any([abortController.signal, ev.signal])
 	}
 
 	if (
@@ -53,14 +56,11 @@ async function onNavigate(ev) {
 
 	hop.sourceElement?.setAttribute(ID_ATTR, id)
 
-	if (!canPrecommit && ev.navigationType !== 'traverse') {
-		abortController = null
-		if (!hop.doc) {
-			ev.preventDefault()
-			abortController = new AbortController()
-			try { await precommitHandler(null) } catch { /* aborted or failed before commit; already prevented */ }
-			return
-		}
+	if (!canPrecommit && ev.navigationType !== 'traverse' && !hop.doc) {
+		ev.preventDefault()
+		hop.signal = abortController.signal // preventDefault() aborts ev.signal
+		try { await precommitHandler(null) } catch { /* aborted or failed before commit; already prevented */ }
+		return
 	}
 
 	async function precommitHandler(controller) {
@@ -124,8 +124,6 @@ addEventListener('DOMContentLoaded', start)
 
 async function loadDoc(hop) {
 	try {
-		hop.signal = abortController === null ? null : (abortController || hop.navEvent).signal
-
 		if (!await sendInterceptable(hop.sourceElement, 'before-fetch', { detail: { hop }, cancelable: true }))
 			throw new DOMException('before-fetch was cancelled', 'AbortError')
 		send(hop.sourceElement, 'fetch-start', { detail: { hop } })
@@ -137,7 +135,7 @@ async function loadDoc(hop) {
 			throw new DOMException('before-response was cancelled', 'AbortError')
 		}
 
-		if (hop.signal?.aborted) {
+		if (hop.signal.aborted) {
 			cancelBody(hop.response.body)
 			throw new DOMException('Navigation was aborted', 'AbortError')
 		}
