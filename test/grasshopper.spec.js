@@ -464,8 +464,13 @@ test.describe('Empty Responses', () => {
 			const docId = await markDocument(page)
 			const url = page.url()
 
+			// The navigation is cancelled, so no frame load ever settles. Wait on the
+			// hop:fetch-end event instead of Playwright's navigation-aware waiting.
+			const ended = page.evaluate(() => new Promise(resolve => {
+				document.addEventListener('hop:fetch-end', () => resolve(), { once: true })
+			}))
 			await page.click(`a[href="${path}"]`)
-			await page.waitForTimeout(500)
+			await ended
 
 			await expect(page).toHaveTitle('Test Hub')
 			expect(page.url()).toBe(url)
@@ -497,7 +502,6 @@ test.describe('Empty Responses', () => {
 		})
 
 		await page.click('a[href="/no-content"]')
-		await page.waitForTimeout(500)
 
 		// The status is checked after hop:before-response, so listeners see the
 		// 204 first. The abort is a DOMException, so it is silent: no fetch-error.
@@ -826,8 +830,13 @@ test.describe('hop:before-response', () => {
 			document.addEventListener('hop:before-response', (e) => e.preventDefault())
 		})
 
+		// The navigation is cancelled, so no frame load ever settles. Wait on the
+		// hop:fetch-end event instead of Playwright's navigation-aware waiting.
+		const ended = page.evaluate(() => new Promise(resolve => {
+			document.addEventListener('hop:fetch-end', () => resolve(), { once: true })
+		}))
 		await page.click('a[href="/fixtures/two.html"]')
-		await page.waitForTimeout(500)
+		await ended
 
 		await expect(page).toHaveTitle('Test Hub')
 		expect(page.url()).toBe(url)
