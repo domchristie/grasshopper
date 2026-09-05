@@ -108,8 +108,24 @@ const server = createServer(async (req, res) => {
       return res.end()
     }
 
+    // Empty responses. There is no body to swap, so grasshopper aborts the
+    // navigation and leaves the current page in place.
+    if (pathname === '/no-content') {
+      if (req.method === 'POST') await parseBody(req)
+      log(req, 204, 'empty', 'no content')
+      res.writeHead(204)
+      return res.end()
+    }
+    if (pathname === '/reset-content') {
+      if (req.method === 'POST') await parseBody(req)
+      log(req, 205, 'empty', 'reset content')
+      res.writeHead(205, { 'Content-Length': 0 })
+      return res.end()
+    }
+
     // Unsupported content type
     if (pathname === '/unsupported') {
+      if (req.method === 'POST') await parseBody(req)
       log(req, 200, 'json', 'application/json')
       res.writeHead(200, { 'Content-Type': 'application/json' })
       return res.end(JSON.stringify({ type: 'json', message: 'This is not HTML' }))

@@ -408,6 +408,129 @@ test.describe('hop:before-fallback', () => {
 		expect(await getDocumentId(page)).toBe(docId)
 		expect(pageErrors).toEqual([])
 	})
+
+	// A form POST whose response is not a redirect has no fallback to cancel
+	// (canFallback() is false), so grasshopper cancels the response body itself
+	// instead of leaking it. Unlike the "disabled" reason above, the
+	// unsupported-media-type check runs before the body is read, so this is
+	// the reason that actually exercises the cancellation.
+	test('a POST with no fallback cancels the response body', async ({ page }) => {
+		await page.goto('/fixtures/form-unsupported.html')
+
+		// The navigation is cancelled, so no frame load ever settles. Wait on the
+		// hop:fetch-end event instead of Playwright's navigation-aware waiting.
+		const ended = page.evaluate(() => new Promise(resolve => {
+			document.addEventListener('hop:before-fallback', (e) => {
+				window.__stashedResponse = e.detail.hop.response
+			}, { once: true })
+			document.addEventListener('hop:fetch-end', () => resolve(), { once: true })
+		}))
+		await page.evaluate(() => document.querySelector('input[type="submit"]').click())
+		await ended
+
+		expect(await page.evaluate(() => window.__stashedResponse.bodyUsed)).toBe(true)
+	})
+
+	test('cancelling it inside an intercept keeps the response body readable', async ({ page }) => {
+		await page.goto('/')
+
+		let resolveText
+		const text = new Promise((r) => (resolveText = r))
+		await page.exposeFunction('__reportText', (t) => resolveText(t))
+		await page.evaluate(() => {
+			document.addEventListener('hop:before-fallback', (e) => {
+				e.intercept(async () => { // keeps the response readable
+					window.__reportText(await e.detail.hop.response.text())
+					e.preventDefault()
+				})
+			}, { once: true })
+		})
+
+		await page.click('a[href="/attachment"]')
+		expect(await text).toContain('This is a downloadable file.')
+	})
+})
+
+test.describe('Empty Responses', () => {
+	// A 204 or 205 response has no body to parse. Grasshopper aborts the
+	// navigation instead of swapping in an empty document. There is no
+	// fallback: the current page stays, with its content and URL unchanged.
+	for (const [status, path] of [[204, '/no-content'], [205, '/reset-content']]) {
+		test(`${status} response keeps the current page and does not swap`, async ({ page }) => {
+			const pageErrors = []
+			page.on('pageerror', (err) => pageErrors.push(err))
+
+			await page.goto('/')
+			const docId = await markDocument(page)
+			const url = page.url()
+
+			// The navigation is cancelled, so no frame load ever settles. Wait on the
+			// hop:fetch-end event instead of Playwright's navigation-aware waiting.
+			const ended = page.evaluate(() => new Promise(resolve => {
+				document.addEventListener('hop:fetch-end', () => resolve(), { once: true })
+			}))
+			await page.click(`a[href="${path}"]`)
+			await ended
+
+			await expect(page).toHaveTitle('Test Hub')
+			expect(page.url()).toBe(url)
+			expect(await getDocumentId(page)).toBe(docId)
+			// The body is still the old body, not an empty one
+			await expect(page.locator('h1')).toHaveText('Grasshopper Test Hub')
+			expect(pageErrors).toEqual([])
+		})
+	}
+
+	test('204 fires before-response and fetch-end, but not fetch-load or fetch-error', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.goto('/')
+
+		const events = page.evaluate(() => {
+			const link = document.querySelector('a[href="/no-content"]')
+			const events = []
+			for (const type of ['before-fetch', 'fetch-start', 'before-response', 'fetch-load', 'fetch-error', 'before-swap']) {
+				link.addEventListener(`hop:${type}`, () => events.push(type))
+			}
+			return new Promise(resolve => {
+				link.addEventListener('hop:fetch-end', () => {
+					events.push('fetch-end')
+					resolve(events)
+				}, { once: true })
+			})
+		})
+
+		await page.click('a[href="/no-content"]')
+
+		// The status is checked after hop:before-response, so listeners see the
+		// 204 first. The abort is a DOMException, so it is silent: no fetch-error.
+		expect(await events).toEqual(['before-fetch', 'fetch-start', 'before-response', 'fetch-end'])
+		expect(pageErrors).toEqual([])
+	})
+
+	test('form POST to a 204 leaves the form page in place', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.goto('/fixtures/form-204.html')
+		const docId = await markDocument(page)
+		const url = page.url()
+
+		// The navigation is cancelled, so no frame load ever settles. Wait on the
+		// hop:fetch-end event instead of Playwright's navigation-aware waiting.
+		const ended = page.evaluate(() => new Promise(resolve => {
+			document.addEventListener('hop:fetch-end', () => resolve(), { once: true })
+		}))
+		await page.evaluate(() => document.querySelector('input[type="submit"]').click())
+		await ended
+		await page.waitForTimeout(200)
+
+		expect(page.url()).toBe(url)
+		expect(await page.evaluate(() => document.title)).toBe('Form 204')
+		expect(await getDocumentId(page)).toBe(docId)
+		expect(pageErrors).toEqual([])
+	})
 })
 
 test.describe('Redirects', () => {
@@ -667,6 +790,220 @@ test.describe('Fetch Events', () => {
 	})
 })
 
+test.describe('hop:before-response', () => {
+	test('fires on the source element with an unread response', async ({ page }) => {
+		await page.goto('/')
+
+		const detail = page.evaluate(() => new Promise(resolve => {
+			document.addEventListener('hop:before-response', (e) => {
+				resolve({
+					status: e.detail.hop.response.status,
+					bodyUsed: e.detail.hop.response.bodyUsed,
+					hasDoc: !!e.detail.hop.doc,
+					url: e.detail.hop.to.href,
+					target: e.target.tagName,
+				})
+			}, { once: true })
+		}))
+
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+
+		const result = await detail
+		expect(result.status).toBe(200)
+		expect(result.bodyUsed).toBe(false)
+		// The body has not been parsed yet, so hop.doc is not set
+		expect(result.hasDoc).toBe(false)
+		expect(result.url).toContain('/fixtures/two.html')
+		expect(result.target).toBe('A')
+	})
+
+	test('cancelling it aborts the navigation with no swap and no fallback', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.goto('/')
+		const docId = await markDocument(page)
+		const url = page.url()
+
+		await page.evaluate(() => {
+			document.addEventListener('hop:before-response', (e) => e.preventDefault())
+		})
+
+		// The navigation is cancelled, so no frame load ever settles. Wait on the
+		// hop:fetch-end event instead of Playwright's navigation-aware waiting.
+		const ended = page.evaluate(() => new Promise(resolve => {
+			document.addEventListener('hop:fetch-end', () => resolve(), { once: true })
+		}))
+		await page.click('a[href="/fixtures/two.html"]')
+		await ended
+
+		await expect(page).toHaveTitle('Test Hub')
+		expect(page.url()).toBe(url)
+		expect(await getDocumentId(page)).toBe(docId)
+		expect(pageErrors).toEqual([])
+	})
+
+	test('an intercept callback runs before the body is read', async ({ page }) => {
+		await page.goto('/')
+
+		await page.evaluate(() => {
+			window.__order = []
+			document.addEventListener('hop:before-response', (e) => {
+				e.intercept(async () => {
+					await new Promise(r => setTimeout(r, 50))
+					window.__order.push('intercept')
+				})
+			})
+			document.addEventListener('hop:fetch-load', () => window.__order.push('fetch-load'))
+		})
+
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+
+		expect(await page.evaluate(() => window.__order)).toEqual(['intercept', 'fetch-load'])
+	})
+
+	test('preventDefault inside the intercept callback cancels after the async work', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.goto('/')
+		const docId = await markDocument(page)
+		const url = page.url()
+
+		await page.evaluate(() => {
+			window.__order = []
+			document.addEventListener('hop:before-response', (e) => {
+				e.intercept(async () => {
+					await new Promise(r => setTimeout(r, 50))
+					window.__order.push('intercept')
+					e.preventDefault()
+				})
+			})
+			document.addEventListener('hop:fetch-load', () => window.__order.push('fetch-load'))
+		})
+
+		await page.click('a[href="/fixtures/two.html"]')
+		await page.waitForTimeout(500)
+
+		expect(await page.evaluate(() => window.__order)).toEqual(['intercept'])
+		await expect(page).toHaveTitle('Test Hub')
+		expect(page.url()).toBe(url)
+		expect(await getDocumentId(page)).toBe(docId)
+		expect(pageErrors).toEqual([])
+	})
+
+	// These cases end in a real full-page navigation, which would tear down a
+	// page.evaluate()-hosted Promise mid-flight. Bridge back to Node via
+	// exposeFunction so the record survives it. That bridge delivers each event
+	// asynchronously, so assertions on the returned array must poll for it to
+	// settle rather than read it the instant a navigation or title change
+	// resolves, unless the test has already waited long enough for the events
+	// to have arrived.
+	async function watchOrder(page, types) {
+		const order = []
+		await page.exposeFunction('__reportOrder', (type) => order.push(type))
+		await page.addInitScript((types) => {
+			for (const type of types) {
+				document.addEventListener(`hop:${type}`, () => window.__reportOrder(type))
+			}
+		}, types)
+		return order
+	}
+
+	test('fires before grasshopper checks the response, ahead of hop:before-fallback', async ({ page }) => {
+		const order = await watchOrder(page, ['before-response', 'before-fallback'])
+		await page.goto('/')
+
+		// The media type is only checked after the event, so a listener still
+		// sees a response that grasshopper goes on to reject
+		await page.click('a[href="/unsupported"]')
+		await page.waitForURL('/unsupported')
+
+		await expect.poll(() => order).toEqual(['before-response', 'before-fallback'])
+	})
+
+	test('fires for a destination page that has disabled grasshopper', async ({ page }) => {
+		const order = await watchOrder(page, ['before-response', 'before-fallback'])
+		await page.goto('/')
+
+		// "disabled" is only known after the body is parsed, so the event fires
+		// long before the fallback
+		await page.click('a[href="/fixtures/no-hop.html"]')
+		await expect(page).toHaveTitle('No Hop')
+
+		await expect.poll(() => order).toEqual(['before-response', 'before-fallback'])
+	})
+
+	test('cancelling it for an unsupported media type skips the fallback navigation', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.goto('/')
+		const docId = await markDocument(page)
+		const url = page.url()
+
+		await page.evaluate(() => {
+			window.__fellBack = false
+			document.addEventListener('hop:before-response', (e) => e.preventDefault())
+			document.addEventListener('hop:before-fallback', () => window.__fellBack = true)
+		})
+
+		await page.click('a[href="/unsupported"]')
+		await page.waitForTimeout(500)
+
+		// Cancelling first means the media-type check never runs, so there is no
+		// fallback to the raw JSON
+		expect(await page.evaluate(() => window.__fellBack)).toBe(false)
+		await expect(page).toHaveTitle('Test Hub')
+		expect(page.url()).toBe(url)
+		expect(await getDocumentId(page)).toBe(docId)
+		expect(pageErrors).toEqual([])
+	})
+
+	test('a navigation superseded while parked in an intercept does not fall back or stop grasshopper', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		const order = await watchOrder(page, ['before-fallback'])
+
+		// Parks every navigation inside its before-response intercept for a
+		// while, so a later navigation has time to supersede an earlier one
+		// that is still waiting on this
+		await page.addInitScript(() => {
+			document.addEventListener('hop:before-response', (e) => {
+				e.intercept(async () => {
+					await new Promise((r) => setTimeout(r, 800))
+				})
+			})
+		})
+
+		await page.goto('/')
+		const docId = await markDocument(page)
+
+		// Starts the navigation to the unsupported media type, then supersedes
+		// it while it is still parked in the intercept above
+		await page.click('a[href="/unsupported"]')
+		await page.waitForTimeout(100)
+		await page.click('a[href="/fixtures/two.html"]')
+
+		// The superseded navigation must not hijack the browser with a real
+		// fallback navigation to the stale /unsupported url
+		await expect(page).toHaveTitle('Two')
+		expect(page.url()).toContain('/fixtures/two.html')
+
+		// Give the superseded navigation's intercept time to resolve, and give
+		// watchOrder's bridged event time to arrive if it does fire
+		await page.waitForTimeout(500)
+
+		expect(order).toEqual([])
+		// Same document survived, proving fallback()'s stop() was not called
+		expect(await getDocumentId(page)).toBe(docId)
+		expect(pageErrors).toEqual([])
+	})
+})
+
 test.describe('Intercept Events', () => {
 	test('before-intercept fires with hop detail', async ({ page }) => {
 		await page.goto('/')
@@ -914,6 +1251,7 @@ test.describe('Lifecycle Event Order', () => {
 			document.addEventListener('hop:before-intercept', () => events.push('before-intercept'))
 			link.addEventListener('hop:before-fetch', () => events.push('before-fetch'))
 			link.addEventListener('hop:fetch-start', () => events.push('fetch-start'))
+			link.addEventListener('hop:before-response', () => events.push('before-response'))
 			link.addEventListener('hop:fetch-load', () => events.push('fetch-load'))
 			link.addEventListener('hop:fetch-end', () => events.push('fetch-end'))
 			document.addEventListener('hop:before-swap', () => events.push('before-swap'))
@@ -936,6 +1274,7 @@ test.describe('Lifecycle Event Order', () => {
 			'before-intercept',
 			'before-fetch',
 			'fetch-start',
+			'before-response',
 			'fetch-load',
 			'fetch-end',
 			'before-swap',
