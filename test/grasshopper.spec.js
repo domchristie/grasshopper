@@ -1069,6 +1069,79 @@ test.describe('Intercept Events', () => {
 	})
 })
 
+test.describe('hop:before-transition', () => {
+	test('cancelling skips the view transition but still swaps', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.addInitScript(() => {
+			window.__transitionCalls = 0
+			const realStartViewTransition = document.startViewTransition?.bind(document)
+			document.startViewTransition = (...args) => {
+				window.__transitionCalls++
+				return realStartViewTransition(...args)
+			}
+			document.addEventListener('hop:before-transition', (e) => {
+				e.preventDefault()
+			})
+		})
+
+		await page.goto('/')
+		const docId = await markDocument(page)
+
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+
+		// The swap still ran, in place, even though the transition was skipped
+		expect(await getDocumentId(page)).toBe(docId)
+		expect(await page.evaluate(() => window.__transitionCalls)).toBe(0)
+		expect(pageErrors).toEqual([])
+	})
+
+	// Cancelling hop:before-transition does not abort the hop - it only skips
+	// the animation and falls through to the plain swap. So a hop that gets
+	// superseded while parked in a before-transition intercept must be
+	// stopped by checkpoint()'s signal recheck, not by the cancellation
+	// itself. If that recheck were removed, the superseded hop would still
+	// swap its stale document in after the newer hop has already taken over.
+	test('a hop superseded while parked does not swap when cancelled', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.addInitScript(() => {
+			window.__swaps = []
+			document.addEventListener('hop:before-transition', (e) => {
+				e.intercept(async () => {
+					await new Promise((r) => setTimeout(r, 900))
+					e.preventDefault()
+				})
+			})
+			document.addEventListener('hop:after-swap', (e) => {
+				window.__swaps.push(e.detail.hop.to.pathname)
+			})
+		})
+
+		await page.goto('/')
+
+		// Starts navigating to two.html, then parks inside its before-transition
+		// intercept
+		await page.click('a[href="/fixtures/two.html"]')
+		await page.waitForTimeout(250)
+
+		// Supersedes the still-parked two.html hop before it can swap
+		await page.click('a[href="/fixtures/persist.html"]')
+
+		// Give both parked intercepts time to resolve
+		await page.waitForTimeout(2500)
+
+		// Only the superseding hop swaps; the stale two.html hop must not
+		expect(await page.evaluate(() => window.__swaps)).toEqual(['/fixtures/persist.html'])
+		await expect(page).toHaveTitle('Persistence')
+		expect(page.url()).toContain('/fixtures/persist.html')
+		expect(pageErrors).toEqual([])
+	})
+})
+
 test.describe('Swap Events', () => {
 	test('before-swap fires before swap and is cancelable', async ({ page }) => {
 		await page.goto('/')

@@ -126,26 +126,17 @@ addEventListener('DOMContentLoaded', start)
 
 async function loadDoc(hop) {
 	try {
-		if (!await sendInterceptable(hop.sourceElement, 'before-fetch', { detail: { hop }, cancelable: true }))
+		if (!await checkpoint(hop, 'before-fetch'))
 			throw new DOMException('before-fetch was cancelled', 'AbortError')
 		send(hop.sourceElement, 'fetch-start', { detail: { hop } })
 
 		hop.response = await fetch(hop.to.href, hop)
 
-		if (!await sendInterceptable(hop.sourceElement, 'before-response', { detail: { hop }, cancelable: true })) {
-			cancelBody(hop.response.body)
+		if (!await checkpoint(hop, 'before-response'))
 			throw new DOMException('before-response was cancelled', 'AbortError')
-		}
 
-		if (hop.signal.aborted) {
-			cancelBody(hop.response.body)
-			throw new DOMException('Navigation was aborted', 'AbortError')
-		}
-
-		if ([204, 205].includes(hop.response.status)) {
-			cancelBody(hop.response.body)
+		if ([204, 205].includes(hop.response.status))
 			throw new DOMException(`Response status is: ${hop.response.status}`, 'AbortError')
-		}
 		const contentType = hop.response.headers.get('content-type')
 		const mediaType = contentType?.split(';')[0].trim()
 		const contentDisposition = hop.response.headers.get('content-disposition')
@@ -171,6 +162,7 @@ async function loadDoc(hop) {
 		links.length && (await Promise.all(links)) // todo: signal.aborted
 		send(hop.sourceElement, 'fetch-load', { detail: { hop } })
 	} catch(error) {
+		cancelBody(hop.response?.body)
 		if (!(error instanceof DOMException)) send(hop.sourceElement, 'fetch-error', { detail: { hop, error } })
 		throw error
 	} finally {
@@ -203,7 +195,7 @@ async function startViewTransition(options, hop = {}) {
 	if (
 		document.startViewTransition &&
 		!hop.navEvent.hasUAVisualTransition &&
-		await sendInterceptable(hop.sourceElement, 'before-transition', { detail: { hop }, cancelable: true })
+		await checkpoint(hop, 'before-transition')
 	) {
 		viewTransition = document.startViewTransition(options)
 	} else {
@@ -359,6 +351,17 @@ async function sendInterceptable(el, type, options = {}) {
 	return target(el).dispatchEvent(ev) && (await intercept(), !ev.defaultPrevented)
 }
 
+// A moment before the swap, where abandoning is still safe: the event might be
+// awaited, so `hop.signal` may abort before it resolves. Throw if it did.
+// Not for before-swap/before-scroll, where that would half-swap the document.
+async function checkpoint(hop, type, detail = {}) {
+	const ok = await sendInterceptable(hop.sourceElement, type, {
+		detail: { hop, ...detail }, cancelable: true
+	})
+	hop.signal.throwIfAborted()
+	return ok
+}
+
 const resetViewTransition = () => viewTransition = {
 	updateCallbackDone: Promise.resolve(),
 	finished: Promise.resolve(),
@@ -403,7 +406,7 @@ function trackedElementsChanged(doc) {
 async function tryFallback(hop, message, name, reason) {
 	const error = new DOMException(message, name)
 	try {
-		if (await sendInterceptable(hop.sourceElement, 'before-fallback', { detail: { hop, error, reason }, cancelable: true })
+		if (await checkpoint(hop, 'before-fallback', { error, reason })
 			&& canFallback(hop.response, hop.navEvent))
 			fallback(hop.response?.url || hop.to.href)
 	} finally {
