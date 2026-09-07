@@ -27,9 +27,8 @@ export function stop() {
 
 async function onNavigate(ev) {
 	if (bypass) return
-	abortController?.abort(new DOMException('Navigation was superseded', 'AbortError'))
+	const oldAbortController = abortController
 	abortController = new AbortController()
-	document.querySelector(`[${ID_ATTR}]`)?.removeAttribute(ID_ATTR)
 
 	const canPrecommit = nativePrecommit && ev.cancelable
 	let { id = crypto.randomUUID() } = ev.info?.hop || {}
@@ -57,8 +56,13 @@ async function onNavigate(ev) {
 		isSamePageHash(hop.from, hop.to, hop.sourceElement) ||
 		!enabled(hop.sourceElement) ||
 		!send(hop.sourceElement, 'before-intercept', { detail: { hop }, cancelable: true })
-	) return
+	) {
+		abortController = oldAbortController
+		return
+	}
 
+	oldAbortController?.abort(new DOMException('Navigation was superseded', 'AbortError'))
+	document.querySelector(`[${ID_ATTR}]`)?.removeAttribute(ID_ATTR)
 	hop.sourceElement?.setAttribute(ID_ATTR, id)
 
 	if (!canPrecommit && ev.navigationType !== 'traverse' && !hop.doc) {
@@ -110,12 +114,12 @@ async function onNavigate(ev) {
 
 			transition.updateCallbackDone.finally(async () => {
 				await runScripts()
-				if (viewTransition !== transition) return
+				if (hop.signal.aborted) return
 				send(hop.sourceElement, 'load', { detail: { hop } })
 			})
 
 			transition.finished.finally(() => {
-				if (viewTransition !== transition) return
+				if (hop.signal.aborted) return
 				hop.sourceElement?.removeAttribute(ID_ATTR)
 				send(hop.sourceElement, 'after-transition', { detail: { hop } })
 				resetViewTransition()

@@ -1896,6 +1896,105 @@ test.describe('Superseded navigations', () => {
 	})
 })
 
+test.describe('hop:load', () => {
+	test('fires when the view transition is skipped', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.addInitScript(() => {
+			window.__loads = []
+			document.addEventListener('hop:load', (e) => {
+				window.__loads.push(e.detail.hop.to.pathname)
+			})
+			document.addEventListener('hop:before-transition', (e) => {
+				e.preventDefault()
+			})
+		})
+
+		await page.goto('/')
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+		await page.waitForTimeout(500)
+
+		const loads = await page.evaluate(() => window.__loads)
+		expect(loads).toContain('/fixtures/two.html')
+		expect(pageErrors).toEqual([])
+	})
+
+	test('fires when scripts outlive the transition', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.route('**/fixtures/scripts-external.js', async (route) => {
+			await new Promise((r) => setTimeout(r, 1200))
+			await route.continue()
+		})
+
+		await page.addInitScript(() => {
+			window.__loads = []
+			document.addEventListener('hop:load', (e) => {
+				window.__loads.push(e.detail.hop.to.pathname)
+			})
+		})
+
+		await page.goto('/')
+
+		await page.evaluate(() => {
+			const r = navigation.navigate('/fixtures/scripts-target.html')
+			r.committed.catch(() => {})
+			r.finished.catch(() => {})
+		})
+
+		await page.waitForTimeout(3000)
+
+		const loads = await page.evaluate(() => window.__loads)
+		expect(loads).toContain('/fixtures/scripts-target.html')
+		expect(pageErrors).toEqual([])
+	})
+
+	test('still fires when an ignored navigation happens first', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.route('**/fixtures/scripts-external.js', async (route) => {
+			await new Promise((r) => setTimeout(r, 1500))
+			await route.continue()
+		})
+
+		await page.addInitScript(() => {
+			window.__loads = []
+			document.addEventListener('hop:load', (e) => {
+				window.__loads.push(e.detail.hop.to.pathname)
+			})
+		})
+
+		await page.goto('/')
+
+		await page.evaluate(() => {
+			const r = navigation.navigate('/fixtures/scripts-target.html')
+			r.committed.catch(() => {})
+			r.finished.catch(() => {})
+		})
+
+		// Swapped, but runScripts() is still pending on the slow external script
+		await page.waitForTimeout(500)
+
+		await page.evaluate(() => {
+			// A same-page hash navigation, which grasshopper ignores at the
+			// guards. An ignored navigation must not abort the live hop.
+			const r = navigation.navigate('#anchor')
+			r.committed.catch(() => {})
+			r.finished.catch(() => {})
+		})
+
+		await page.waitForTimeout(2500)
+
+		const loads = await page.evaluate(() => window.__loads)
+		expect(loads).toContain('/fixtures/scripts-target.html')
+		expect(pageErrors).toEqual([])
+	})
+})
+
 test.describe('Navigation ID', () => {
 	const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
