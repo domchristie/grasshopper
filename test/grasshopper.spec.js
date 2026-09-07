@@ -1671,6 +1671,102 @@ test.describe('Slow responses', () => {
 	})
 })
 
+test.describe('Timeout', () => {
+	test('a slow load times out and fires hop:fetch-error', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.addInitScript(() => {
+			window.__fetchErrors = []
+			document.addEventListener('hop:before-intercept', (e) => {
+				e.detail.hop.timeout = 400
+			})
+			document.addEventListener('hop:fetch-error', (e) => {
+				window.__fetchErrors.push({ name: e.detail.error.name, message: e.detail.error.message })
+			})
+		})
+
+		await page.goto('/')
+		const docId = await markDocument(page)
+
+		await page.click('a[href="/slow"]')
+		await page.waitForTimeout(1500)
+
+		await expect(page).toHaveTitle('Test Hub')
+		expect(await getDocumentId(page)).toBe(docId)
+
+		const fetchErrors = await page.evaluate(() => window.__fetchErrors)
+		expect(fetchErrors).toHaveLength(1)
+		expect(fetchErrors[0].name).toBe('TimeoutError')
+		expect(pageErrors).toEqual([])
+	})
+
+	test('hop.timeout = 0 disables the timeout', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.addInitScript(() => {
+			window.__fetchErrors = []
+			document.addEventListener('hop:before-intercept', (e) => {
+				e.detail.hop.timeout = 0
+			})
+			document.addEventListener('hop:fetch-error', (e) => {
+				window.__fetchErrors.push({ name: e.detail.error.name, message: e.detail.error.message })
+			})
+		})
+
+		await page.goto('/')
+		const docId = await markDocument(page)
+
+		await page.click('a[href="/slow?delay=500"]')
+		await expect(page.locator('h1')).toHaveText('Slow Page')
+		expect(await getDocumentId(page)).toBe(docId)
+
+		const fetchErrors = await page.evaluate(() => window.__fetchErrors)
+		expect(fetchErrors).toEqual([])
+		expect(pageErrors).toEqual([])
+	})
+
+	test('the timer is cleared when the load finishes', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.addInitScript(() => {
+			window.__fetchErrors = []
+			document.addEventListener('hop:before-intercept', (e) => {
+				e.detail.hop.timeout = 400
+			})
+			document.addEventListener('hop:fetch-error', (e) => {
+				window.__fetchErrors.push({ name: e.detail.error.name, message: e.detail.error.message })
+			})
+			document.addEventListener('hop:load', (e) => {
+				window.__hop = e.detail.hop
+			})
+		})
+
+		await page.goto('/')
+		const docId = await markDocument(page)
+
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+		expect(await getDocumentId(page)).toBe(docId)
+
+		// Well past the 400ms timeout, to prove the timer was cleared and not
+		// left running against hop.signal
+		await page.waitForTimeout(1200)
+
+		await expect(page).toHaveTitle('Two')
+		expect(await getDocumentId(page)).toBe(docId)
+
+		const aborted = await page.evaluate(() => window.__hop.signal.aborted)
+		expect(aborted).toBe(false)
+
+		const fetchErrors = await page.evaluate(() => window.__fetchErrors)
+		expect(fetchErrors).toEqual([])
+		expect(pageErrors).toEqual([])
+	})
+})
+
 test.describe('Navigation ID', () => {
 	const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 

@@ -2,6 +2,7 @@ const PERSIST_ATTR = 'data-hop-persist'
 const DISABLED_ATTR = 'data-hop'
 const TRACK_ATTR = 'data-hop-track'
 const ID_ATTR = 'data-hop-id'
+const DEFAULT_TIMEOUT = 60000
 const nativePrecommit = !!self.NavigationPrecommitController
 
 let started = false
@@ -35,6 +36,7 @@ async function onNavigate(ev) {
 
 	const hop = {
 		id,
+		timeout: DEFAULT_TIMEOUT,
 		from: new URL(location.href),
 		to: new URL(ev.destination.url),
 		method: ev.formData ? 'POST' : 'GET',
@@ -43,9 +45,10 @@ async function onNavigate(ev) {
 		sourceElement: ev.sourceElement,
 		direction: direction(ev),
 		...(ev.info?.hop || {}),
-		// both override a stale value forwarded from a non-precommit flow
+		// all three override a stale value forwarded from a non-precommit flow
 		navEvent: ev,
-		signal: AbortSignal.any([abortController.signal, ev.signal])
+		signal: AbortSignal.any([abortController.signal, ev.signal]),
+		abort: abortController.abort.bind(abortController)
 	}
 
 	if (
@@ -125,6 +128,10 @@ async function onNavigate(ev) {
 addEventListener('DOMContentLoaded', start)
 
 async function loadDoc(hop) {
+	const timer = hop.timeout && setTimeout(
+		() => hop.abort(new DOMException('Navigation timed out', 'TimeoutError')),
+		hop.timeout
+	)
 	try {
 		if (!await checkpoint(hop, 'before-fetch'))
 			throw new DOMException('before-fetch was cancelled', 'AbortError')
@@ -163,9 +170,11 @@ async function loadDoc(hop) {
 		send(hop.sourceElement, 'fetch-load', { detail: { hop } })
 	} catch(error) {
 		cancelBody(hop.response?.body)
-		if (!(error instanceof DOMException)) send(hop.sourceElement, 'fetch-error', { detail: { hop, error } })
+		if (!(error instanceof DOMException) || error.name === 'TimeoutError')
+			send(hop.sourceElement, 'fetch-error', { detail: { hop, error } })
 		throw error
 	} finally {
+		clearTimeout(timer)
 		send(hop.sourceElement, 'fetch-end', { detail: { hop } })
 	}
 }

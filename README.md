@@ -187,7 +187,7 @@ Fired after the page has been fetched and new stylesheets have been preloaded.
 
 ### `hop:fetch-error`
 
-Fired when the fetch throws an error (e.g. network failure). Includes the error object in `e.detail.error`. The navigation is then aborted — the URL and page content remain unchanged, and a `navigateerror` event fires on `window.navigation`, which can be used to display an error message. (In browsers without precommit support, a failed fetch during a back/forward traversal cannot un-commit the URL: `navigateerror` still fires, but the address bar may show the destination URL.)
+Fired when the fetch throws an error (e.g. network failure), or times out (see [Load Timeout](#load-timeout)). Includes the error object in `e.detail.error`. The navigation is then aborted — the URL and page content remain unchanged. (On browsers without `NavigationPrecommitController`, a back/forward traversal has already committed the URL by this point, so the address bar shows the destination while the content stays put.)
 
 ### `hop:before-fallback`
 
@@ -258,6 +258,7 @@ The `hop` object is available via `e.detail.hop` in all events. It is also passe
 | Property | Type | Description |
 |----------|------|-------------|
 | `id` | `string` | A UUID identifying the navigation. |
+| `timeout` | `number` | How long the load phase may take, in ms. Defaults to `60000`. Set to falsy to disable. |
 | `sourceElement` | `Element \| undefined` | The element that initiated the navigation (e.g. a link or form submitter). |
 | `direction` | `"forward" \| "back" \| "none"` | `"forward"` for pushes and traversals to a higher history index, `"back"` for traversals to a lower index, `"none"` for replaces and reloads. |
 | `from` | `URL` | The URL of the page at the time of navigation. |
@@ -266,9 +267,14 @@ The `hop` object is available via `e.detail.hop` in all events. It is also passe
 | `body` | `FormData \| undefined` | The form data, if the navigation was triggered by a form submission. |
 | `headers` | `object` | Request headers. Includes `x-hop-id`. |
 | `signal` | `AbortSignal` | The abort signal for the fetch request. Available from `hop:before-intercept` onwards. |
+| `abort` | `function` | Aborts this navigation. Takes an optional reason. |
 | `response` | `Response \| undefined` | The fetch response. Available from `hop:before-response` onwards. |
 | `doc` | `Document \| undefined` | The parsed destination document. Available from `hop:fetch-load` onwards. |
 | `navEvent` | `NavigateEvent` | The underlying [NavigateEvent](https://developer.mozilla.org/en-US/docs/Web/API/NavigateEvent). |
+
+## Load Timeout
+
+The load phase (fetch, parse, and stylesheet preload) has a default timeout of `60000` ms. If it is not done by then, the navigation aborts with a `TimeoutError` and `hop:fetch-error` fires. Set a custom timeout by updating `hop.timeout` in the `before-intercept` event. Set to a falsy value to disable.
 
 ## Navigation ID
 
