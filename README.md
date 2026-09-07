@@ -269,7 +269,7 @@ The `hop` object is available via `e.detail.hop` in all events. It is also passe
 | `signal` | `AbortSignal` | The abort signal for the fetch request. Available from `hop:before-intercept` onwards. |
 | `abort` | `function` | Aborts this navigation. Takes an optional reason. |
 | `response` | `Response \| undefined` | The fetch response. Available from `hop:before-response` onwards. |
-| `doc` | `Document \| undefined` | The parsed destination document. Available from `hop:fetch-load` onwards. |
+| `doc` | `Document \| undefined` | The parsed destination document. Available from `hop:fetch-load` onwards, or from `hop:before-fallback` when the reason is `disabled`. |
 | `navEvent` | `NavigateEvent` | The underlying [NavigateEvent](https://developer.mozilla.org/en-US/docs/Web/API/NavigateEvent). |
 
 ## Load Timeout

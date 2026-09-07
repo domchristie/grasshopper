@@ -8,6 +8,10 @@ async function getDocumentId(page) {
 	return await page.evaluate(() => document.__testId)
 }
 
+// Forces the non-precommit code path (Safari, and Chrome before 141)
+const noPrecommit = (page) =>
+	page.addInitScript(() => { delete self.NavigationPrecommitController })
+
 test.describe('Basic Navigation', () => {
 	test('push navigation keeps same document', async ({ page }) => {
 		await page.goto('/')
@@ -469,6 +473,39 @@ test.describe('hop:before-fallback', () => {
 
 		await page.click('a[href="/attachment"]')
 		expect(await text).toContain('This is a downloadable file.')
+	})
+
+	test('a hop superseded while parked does not hijack the newer navigation', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.addInitScript(() => {
+			document.addEventListener('hop:before-fallback', (e) => {
+				e.intercept(async () => {
+					await new Promise((r) => setTimeout(r, 800))
+				})
+			})
+		})
+
+		await page.goto('/')
+		const docId = await markDocument(page)
+
+		// Parks in the listener above: media type check fails, so grasshopper
+		// awaits the intercept callback before deciding whether to fall back.
+		await page.click('a[href="/unsupported"]')
+		await page.waitForTimeout(100)
+
+		// Supersede the parked hop with a newer navigation.
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+
+		// Past the 800ms park - the stale hop has had its chance to call fallback().
+		await page.waitForTimeout(1200)
+
+		await expect(page).toHaveTitle('Two')
+		expect(page.url()).toContain('/fixtures/two.html')
+		expect(await getDocumentId(page)).toBe(docId)
+		expect(pageErrors).toEqual([])
 	})
 })
 
@@ -2200,6 +2237,61 @@ test.describe('Traversal Without History-Action Activation', () => {
 	})
 })
 
+test.describe('Non-precommit navigation', () => {
+	test('a traversal during an in-flight push is not aborted by it', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await noPrecommit(page)
+		await page.addInitScript(() => {
+			window.__beforeFetch = []
+			window.__afterSwap = []
+			document.addEventListener('hop:before-fetch', (e) => {
+				window.__beforeFetch.push({
+					type: e.detail.hop.navEvent.navigationType,
+					aborted: e.detail.hop.signal.aborted
+				})
+			})
+			document.addEventListener('hop:after-swap', (e) => {
+				window.__afterSwap.push(e.detail.hop.to.pathname)
+			})
+		})
+
+		await page.goto('/')
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two') // gives us a history entry to go back to
+
+		// Start a slow push that will still be in flight.
+		await page.evaluate(() => {
+			const r = navigation.navigate('/slow')
+			r.committed.catch(() => {})
+			r.finished.catch(() => {})
+		})
+		await page.waitForTimeout(300) // the fetch is genuinely in flight now
+
+		// Go back while the push's fetch is still in flight. Old bug: abortController
+		// was assigned in only one branch, so this traversal read the push's
+		// already-aborted controller and died instantly - the URL moved to "/" but
+		// the content stayed on page Two.
+		await page.evaluate(() => {
+			const r = navigation.back()
+			r.committed.catch(() => {})
+			r.finished.catch(() => {})
+		})
+		await page.waitForTimeout(1500)
+
+		const beforeFetch = await page.evaluate(() => window.__beforeFetch)
+		const afterSwap = await page.evaluate(() => window.__afterSwap)
+
+		const traversalFetch = beforeFetch.find((e) => e.type === 'traverse')
+		expect(traversalFetch?.aborted).toBe(false)
+		expect(afterSwap).toContain('/')
+		await expect(page).toHaveTitle('Test Hub')
+		expect(new URL(page.url()).pathname).toBe('/')
+		expect(pageErrors).toEqual([])
+	})
+})
+
 test.describe('Start/Stop', () => {
 	test('stop() prevents interception; link falls back to full navigation', async ({ page }) => {
 		await page.goto('/')
@@ -2271,6 +2363,9 @@ test.describe('Start/Stop', () => {
 		const pageErrors = []
 		page.on('pageerror', (err) => pageErrors.push(err))
 
+		const failedSlow = []
+		page.on('requestfailed', (r) => r.url().includes('/slow') && failedSlow.push(r.failure()?.errorText))
+
 		await page.goto('/')
 		const docId = await markDocument(page)
 		const url = page.url()
@@ -2278,7 +2373,7 @@ test.describe('Start/Stop', () => {
 		const fetchStarted = page.evaluate(() => new Promise(resolve => {
 			document.addEventListener('hop:before-fetch', resolve, { once: true })
 		}))
-		page.click('a[href="/slow"]') // default 3s delay, well outside this test's assertion window
+		page.click('a[href="/slow"]') // default 3s delay keeps the request in flight so the abort is observable
 		await fetchStarted
 
 		await page.evaluate(async () => {
@@ -2291,5 +2386,6 @@ test.describe('Start/Stop', () => {
 		expect(page.url()).toBe(url)
 		expect(await getDocumentId(page)).toBe(docId)
 		expect(pageErrors).toEqual([])
+		await expect.poll(() => failedSlow).not.toEqual([])
 	})
 })
