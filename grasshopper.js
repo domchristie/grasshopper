@@ -166,7 +166,7 @@ async function loadDoc(hop) {
 			throw await tryFallback(hop, 'Destination document has disabled Grasshopper', 'NotAllowedError', 'disabled')
 
 		const links = preloadStyles(hop.doc)
-		links.length && (await Promise.all(links)) // todo: signal.aborted
+		await until(Promise.all(links), hop.signal)
 		send(hop.sourceElement, 'fetch-load', { detail: { hop } })
 	} catch(error) {
 		cancelBody(hop.response?.body)
@@ -438,6 +438,13 @@ function withBypass(navigate) {
 const fallback = (to) => withBypass(() => location.assign(to))
 
 const cancelBody = (body) => body?.cancel().catch(() => {})
+
+function until(promise, signal) {
+	signal.throwIfAborted()
+	return Promise.race([promise, new Promise((_, reject) =>
+		signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+	)])
+}
 
 function redirect(controller, to, options = {}) {
 	try {

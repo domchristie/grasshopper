@@ -1767,6 +1767,51 @@ test.describe('Timeout', () => {
 	})
 })
 
+test.describe('Stylesheet preloading', () => {
+	test('a stalled preload stops waiting when the navigation is superseded', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.route('**/styles.css?v=1', async (route) => {
+			await new Promise((r) => setTimeout(r, 10000))
+			await route.abort()
+		})
+
+		await page.addInitScript(() => {
+			window.__fetchEnds = []
+			document.addEventListener('hop:fetch-end', (e) => {
+				window.__fetchEnds.push(e.detail.hop.to.pathname)
+			})
+		})
+
+		await page.goto('/')
+
+		await page.evaluate(() => {
+			const r = navigation.navigate('/fixtures/track.html')
+			r.committed.catch(() => {})
+			r.finished.catch(() => {})
+		})
+
+		await page.waitForTimeout(1000)
+
+		let fetchEnds = await page.evaluate(() => window.__fetchEnds)
+		expect(fetchEnds).not.toContain('/fixtures/track.html')
+
+		await page.evaluate(() => {
+			const r = navigation.navigate('/fixtures/two.html')
+			r.committed.catch(() => {})
+			r.finished.catch(() => {})
+		})
+
+		await page.waitForTimeout(1500)
+
+		fetchEnds = await page.evaluate(() => window.__fetchEnds)
+		expect(fetchEnds).toContain('/fixtures/track.html')
+		await expect(page).toHaveTitle('Two')
+		expect(pageErrors).toEqual([])
+	})
+})
+
 test.describe('Navigation ID', () => {
 	const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
