@@ -170,8 +170,11 @@ async function loadDoc(hop) {
 		send(hop.sourceElement, 'fetch-load', { detail: { hop } })
 	} catch(error) {
 		cancelBody(hop.response?.body)
-		if (!(error instanceof DOMException) || error.name === 'TimeoutError')
-			send(hop.sourceElement, 'fetch-error', { detail: { hop, error } })
+		// WebKit rejects the fetch with a generic AbortError rather than the
+		// signal's reason, so check whether the reason was our timeout
+		const cause = hop.signal.reason?.name === 'TimeoutError' ? hop.signal.reason : error
+		if (!(cause instanceof DOMException) || cause.name === 'TimeoutError')
+			send(hop.sourceElement, 'fetch-error', { detail: { hop, error: cause } })
 		throw error
 	} finally {
 		clearTimeout(timer)
