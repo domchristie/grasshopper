@@ -1812,6 +1812,53 @@ test.describe('Stylesheet preloading', () => {
 	})
 })
 
+test.describe('Superseded navigations', () => {
+	test('hop:load does not fire for a hop whose transition is no longer current', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.route('**/fixtures/scripts-external.js', async (route) => {
+			await new Promise((r) => setTimeout(r, 1500))
+			await route.continue()
+		})
+
+		await page.addInitScript(() => {
+			window.__loads = []
+			document.addEventListener('hop:load', (e) => {
+				window.__loads.push(e.detail.hop.to.pathname)
+			})
+		})
+
+		await page.goto('/')
+
+		await page.evaluate(() => {
+			const r = navigation.navigate('/fixtures/scripts-target.html')
+			r.committed.catch(() => {})
+			r.finished.catch(() => {})
+		})
+
+		// Long enough for the swap, well short of the 1500ms script delay.
+		await page.waitForTimeout(400)
+
+		await page.evaluate(() => {
+			const r = navigation.navigate('/fixtures/two.html')
+			r.committed.catch(() => {})
+			r.finished.catch(() => {})
+		})
+
+		// Past the script delay, so the stale runScripts() has definitely resolved.
+		// runScripts() still runs for the stale hop -- those scripts are in the
+		// live document and must execute -- only the hop:load event is guarded.
+		await page.waitForTimeout(2500)
+
+		const loads = await page.evaluate(() => window.__loads)
+		expect(loads).toEqual(['/fixtures/two.html'])
+
+		await expect(page).toHaveTitle('Two')
+		expect(pageErrors).toEqual([])
+	})
+})
+
 test.describe('Navigation ID', () => {
 	const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 

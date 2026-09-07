@@ -103,23 +103,25 @@ async function onNavigate(ev) {
 			if (canFallback(hop.response, ev) && trackedElementsChanged(hop.doc))
 				return withBypass(() => location.reload())
 
-			viewTransition = await startViewTransition({
+			const transition = viewTransition = await startViewTransition({
 				update: async () => (await swap(hop), await scroll(hop)),
 				types: [hop.direction]
 			}, hop)
 
-			viewTransition.updateCallbackDone.finally(async () => {
+			transition.updateCallbackDone.finally(async () => {
 				await runScripts()
+				if (viewTransition !== transition) return
 				send(hop.sourceElement, 'load', { detail: { hop } })
 			})
 
-			viewTransition.finished.finally(() => {
+			transition.finished.finally(() => {
+				if (viewTransition !== transition) return
 				hop.sourceElement?.removeAttribute(ID_ATTR)
 				send(hop.sourceElement, 'after-transition', { detail: { hop } })
 				resetViewTransition()
 			})
 
-			return viewTransition.updateCallbackDone
+			return transition.updateCallbackDone
 		},
 		focus: 'manual',
 		scroll: 'manual'
@@ -209,11 +211,11 @@ async function startViewTransition(options, hop = {}) {
 		!hop.navEvent.hasUAVisualTransition &&
 		await checkpoint(hop, 'before-transition')
 	) {
-		viewTransition = document.startViewTransition(options)
+		return document.startViewTransition(options)
 	} else {
 		await (typeof options === 'function' ? options : options.update)()
+		return nullTransition()
 	}
-	return viewTransition
 }
 
 async function swap(hop) {
@@ -374,11 +376,13 @@ async function checkpoint(hop, type, detail = {}) {
 	return ok
 }
 
-const resetViewTransition = () => viewTransition = {
+const nullTransition = () => ({
 	updateCallbackDone: Promise.resolve(),
 	finished: Promise.resolve(),
 	skipTransition: () => {}
-}
+})
+
+const resetViewTransition = () => viewTransition = nullTransition()
 
 function enabled(el) {
 	if (el instanceof Element) {
