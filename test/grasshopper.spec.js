@@ -1271,6 +1271,57 @@ test.describe('Swap Events', () => {
 		const result = await eventFired
 		expect(result.hasHop).toBe(true)
 	})
+
+	test('a hop superseded while parked in before-swap does not swap', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.addInitScript(() => {
+			window.__swaps = []
+			// Force the nullTransition path: a real, still-active
+			// document.startViewTransition() would have its own ready/
+			// updateCallbackDone/finished promises rejected by the browser
+			// once checkpoint() throws inside the update callback, which
+			// surfaces as unrelated unhandled rejections. That's a browser
+			// view-transition wrinkle, not what this test is about, so it's
+			// sidestepped here to isolate the before-swap guard itself.
+			document.addEventListener('hop:before-transition', (e) => {
+				e.preventDefault()
+			})
+			document.addEventListener('hop:before-swap', (e) => {
+				e.intercept(async () => {
+					await new Promise((r) => setTimeout(r, 800))
+				})
+			})
+			document.addEventListener('hop:after-swap', (e) => {
+				window.__swaps.push(e.detail.hop.to.pathname)
+			})
+		})
+
+		await page.goto('/')
+
+		await page.evaluate(() => {
+			const r = navigation.navigate('/fixtures/two.html')
+			r.committed.catch(() => {})
+			r.finished.catch(() => {})
+		})
+
+		// Long enough to be parked inside the before-swap intercept
+		await page.waitForTimeout(200)
+
+		await page.evaluate(() => {
+			const r = navigation.navigate('/fixtures/persist.html')
+			r.committed.catch(() => {})
+			r.finished.catch(() => {})
+		})
+
+		// Past both parked intercepts
+		await page.waitForTimeout(2500)
+
+		expect(await page.evaluate(() => window.__swaps)).toEqual(['/fixtures/persist.html'])
+		await expect(page).toHaveTitle('Persistence')
+		expect(pageErrors).toEqual([])
+	})
 })
 
 test.describe('Scroll Events', () => {

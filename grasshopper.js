@@ -122,14 +122,14 @@ async function onNavigate(ev) {
 				await runScripts()
 				if (currentHop !== hop) return
 				send(hop.sourceElement, 'load', { detail: { hop } })
-			})
+			}).catch(() => {})
 
 			transition.finished.finally(() => {
 				if (currentHop !== hop) return
 				hop.sourceElement?.removeAttribute(ID_ATTR)
 				send(hop.sourceElement, 'after-transition', { detail: { hop } })
 				resetViewTransition()
-			})
+			}).catch(() => {})
 
 			return transition.updateCallbackDone
 		},
@@ -229,7 +229,7 @@ async function startViewTransition(options, hop = {}) {
 }
 
 async function swap(hop) {
-	if (!await sendInterceptable(hop.sourceElement, 'before-swap', { detail: { hop }, cancelable: true })) return
+	if (!await checkpoint(hop, 'before-swap')) return
 	swapRootAttributes(hop.doc)
 	swapHeadElements(hop.doc)
 	withRestoredFocus(() => {
@@ -375,9 +375,6 @@ async function sendInterceptable(el, type, options = {}) {
 	return target(el).dispatchEvent(ev) && (await intercept(), !ev.defaultPrevented)
 }
 
-// A moment before the swap, where abandoning is still safe: the event might be
-// awaited, so `hop.signal` may abort before it resolves. Throw if it did.
-// Not for before-swap/before-scroll, where that would half-swap the document.
 async function checkpoint(hop, type, detail = {}) {
 	const ok = await sendInterceptable(hop.sourceElement, type, {
 		detail: { hop, ...detail }, cancelable: true
