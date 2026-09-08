@@ -1802,6 +1802,41 @@ test.describe('Timeout', () => {
 		expect(fetchErrors).toEqual([])
 		expect(pageErrors).toEqual([])
 	})
+
+	test('hop.abort with a custom reason does not fire hop:fetch-error', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.addInitScript(() => {
+			window.__fetchErrors = []
+			document.addEventListener('hop:fetch-error', (e) => {
+				const value = e.detail.error
+				window.__fetchErrors.push({
+					type: typeof value,
+					name: value?.name ?? String(value)
+				})
+			})
+			document.addEventListener('hop:fetch-start', (e) => {
+				setTimeout(() => e.detail.hop.abort('too slow'), 100)
+			})
+		})
+
+		await page.goto('/')
+		const docId = await markDocument(page)
+
+		await page.click('a[href="/slow"]')
+		await page.waitForTimeout(1200)
+
+		// hop.abort('too slow') must behave like hop.abort() with no reason,
+		// which is already silent -- a string reason must not be reported as
+		// a fetch failure
+		const fetchErrors = await page.evaluate(() => window.__fetchErrors)
+		expect(fetchErrors).toEqual([])
+
+		await expect(page).toHaveTitle('Test Hub')
+		expect(await getDocumentId(page)).toBe(docId)
+		expect(pageErrors).toEqual([])
+	})
 })
 
 test.describe('Stylesheet preloading', () => {
