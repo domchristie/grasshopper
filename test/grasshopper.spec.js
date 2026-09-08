@@ -1586,6 +1586,33 @@ test.describe('runScripts', () => {
 
 		expect(await orderAtLoad).toEqual(['inline-module', 'external-module'])
 	})
+
+	// The transition's own rejection is already reported via navigateerror, so
+	// it is caught first and swallowed. A failure in our own post-transition
+	// work (running scripts) is reported nowhere else, and must not be
+	// swallowed too -- otherwise a page whose scripts silently failed to run
+	// looks fine.
+	test('a failure surfaces rather than being swallowed', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err.message))
+
+		await page.addInitScript(() => {
+			// runScripts() calls this when the new document has an inline module
+			// script; making it throw is the simplest way to fail runScripts
+			Element.prototype.insertAdjacentHTML = () => { throw new Error('boom from runScripts') }
+		})
+
+		await page.goto('/')
+		await page.evaluate(() => {
+			const r = navigation.navigate('/fixtures/scripts-lone-module.html')
+			r.committed.catch(() => {})
+			r.finished.catch(() => {})
+		})
+		await page.waitForTimeout(1200)
+
+		await expect(page).toHaveTitle('Lone Module Target')
+		expect(pageErrors).toContain('boom from runScripts')
+	})
 })
 
 test.describe('Public API: replace() and runScripts()', () => {

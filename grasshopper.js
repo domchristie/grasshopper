@@ -118,18 +118,20 @@ async function onNavigate(ev) {
 
 			transition.ready.catch(() => {})
 
-			transition.updateCallbackDone.finally(async () => {
+			// catch first: a failed transition is already reported through this
+			// handler's return value, but our own failures below are not
+			transition.updateCallbackDone.catch(() => {}).then(async () => {
 				await runScripts()
 				if (currentHop !== hop) return
 				send(hop.sourceElement, 'load', { detail: { hop } })
-			}).catch(() => {})
+			})
 
-			transition.finished.finally(() => {
+			transition.finished.catch(() => {}).then(() => {
 				if (currentHop !== hop) return
 				hop.sourceElement?.removeAttribute(ID_ATTR)
 				send(hop.sourceElement, 'after-transition', { detail: { hop } })
 				resetViewTransition()
-			}).catch(() => {})
+			})
 
 			return transition.updateCallbackDone
 		},
