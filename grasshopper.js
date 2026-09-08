@@ -456,9 +456,11 @@ const cancelBody = (body) => body?.cancel().catch(() => {})
 
 function until(promise, signal) {
 	signal.throwIfAborted()
+	const controller = new AbortController()
 	return Promise.race([promise, new Promise((_, reject) =>
-		signal.addEventListener('abort', () => reject(signal.reason), { once: true })
-	)])
+		signal.addEventListener('abort', () => reject(signal.reason),
+			{ once: true, signal: controller.signal })
+	)]).finally(() => controller.abort())
 }
 
 function redirect(controller, to, options = {}) {
