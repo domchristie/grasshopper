@@ -114,6 +114,8 @@ async function onNavigate(ev) {
 				types: [hop.direction]
 			}, hop)
 
+			transition.ready.catch(() => {})
+
 			transition.updateCallbackDone.finally(async () => {
 				await runScripts()
 				if (hop.signal.aborted) return
@@ -383,6 +385,7 @@ async function checkpoint(hop, type, detail = {}) {
 }
 
 const nullTransition = () => ({
+	ready: Promise.resolve(),
 	updateCallbackDone: Promise.resolve(),
 	finished: Promise.resolve(),
 	skipTransition: () => {}
