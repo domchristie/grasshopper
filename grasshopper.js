@@ -104,6 +104,8 @@ async function onNavigate(ev) {
 				await viewTransition.updateCallbackDone
 			} catch { /* ignore */ }
 
+			hop.signal.throwIfAborted()
+
 			if (canFallback(hop.response, ev) && trackedElementsChanged(hop.doc))
 				return withBypass(() => location.reload())
 

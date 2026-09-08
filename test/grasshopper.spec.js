@@ -1894,6 +1894,70 @@ test.describe('Superseded navigations', () => {
 		await expect(page).toHaveTitle('Two')
 		expect(pageErrors).toEqual([])
 	})
+
+	test('a hop superseded while awaiting the previous transition does not reload or swap stale content', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.addInitScript(() => {
+			window.__swaps = []
+			document.addEventListener('hop:before-scroll', (e) => {
+				if (e.detail.hop.to.pathname === '/fixtures/track-same.html') {
+					e.intercept(async () => {
+						await new Promise((r) => setTimeout(r, 1500))
+					})
+				}
+			})
+			document.addEventListener('hop:after-swap', (e) => {
+				window.__swaps.push(e.detail.hop.to.pathname)
+			})
+		})
+
+		await page.goto('/fixtures/track.html')
+		const docId = await markDocument(page)
+
+		// nav1: swaps immediately, then parks in before-scroll for 1500ms --
+		// keeping its own transition's updateCallbackDone unresolved.
+		await page.evaluate(() => {
+			const r = navigation.navigate('/fixtures/track-same.html')
+			r.committed.catch(() => {})
+			r.finished.catch(() => {})
+		})
+		await page.waitForTimeout(300)
+
+		// nav2: will call viewTransition.skipTransition() then await nav1's
+		// still-pending updateCallbackDone. Its tracked stylesheet differs
+		// from the live document (still showing track-same.html's v=1
+		// stylesheet), so if it isn't stopped right after that await, it
+		// would call location.reload().
+		await page.evaluate(() => {
+			const r = navigation.navigate('/fixtures/track-changed.html')
+			r.committed.catch(() => {})
+			r.finished.catch(() => {})
+		})
+		await page.waitForTimeout(100)
+
+		// nav3: supersedes nav2 while nav2 is still parked awaiting nav1's
+		// transition. Targets track.html (same tracked stylesheet as the
+		// live document) so nav3 itself never trips trackedElementsChanged --
+		// isolating nav2's behavior as the only possible cause of a reload.
+		await page.evaluate(() => {
+			const r = navigation.navigate('/fixtures/track.html')
+			r.committed.catch(() => {})
+			r.finished.catch(() => {})
+		})
+
+		// Past nav1's park, plenty of time for nav2/nav3 to settle.
+		await page.waitForTimeout(3000)
+
+		// The document must survive throughout -- a real location.reload()
+		// (the bug this guards against) would create a brand new
+		// document/window and wipe this.
+		expect(await getDocumentId(page)).toBe(docId)
+
+		expect(await page.evaluate(() => window.__swaps)).toEqual(['/fixtures/track-same.html', '/fixtures/track.html'])
+		await expect(page).toHaveTitle('Track')
+	})
 })
 
 test.describe('hop:load', () => {
