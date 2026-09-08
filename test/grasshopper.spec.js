@@ -2488,6 +2488,39 @@ test.describe('Non-precommit navigation', () => {
 		expect(new URL(page.url()).pathname).toBe('/')
 		expect(pageErrors).toEqual([])
 	})
+
+	test('a fragment link cancels an in-flight navigation', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await noPrecommit(page)
+		await page.addInitScript(() => {
+			window.__afterSwap = []
+			document.addEventListener('hop:after-swap', (e) => {
+				window.__afterSwap.push(e.detail.hop.to.pathname)
+			})
+		})
+
+		await page.goto('/')
+		const docId = await markDocument(page)
+
+		// Start a slow navigation without awaiting it - the /slow route takes 3s.
+		page.click('a[href="/slow"]')
+		await page.waitForTimeout(400) // the fetch is genuinely in flight now
+
+		// grasshopper ignores this navigation via isSamePageHash, so on the
+		// non-precommit path hop.signal (abortController.signal alone, since
+		// preventDefault() aborts ev.signal) is the only thing that can still
+		// cancel the in-flight /slow fetch.
+		await page.click('a[href="#local-fragment"]')
+		await page.waitForTimeout(4000) // well past the 3s /slow route
+
+		expect(await page.evaluate(() => window.__afterSwap)).not.toContain('/slow')
+		await expect(page).toHaveTitle('Test Hub')
+		expect(new URL(page.url()).hash).toBe('#local-fragment')
+		expect(await getDocumentId(page)).toBe(docId)
+		expect(pageErrors).toEqual([])
+	})
 })
 
 test.describe('Start/Stop', () => {

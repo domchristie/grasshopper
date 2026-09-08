@@ -10,6 +10,7 @@ let parser
 let abortController
 let viewTransition
 let bypass
+let currentHop
 
 export function start() {
 	if (started || !enabled() || !('navigation' in window)) return
@@ -29,6 +30,7 @@ async function onNavigate(ev) {
 	if (bypass) return
 	const oldAbortController = abortController
 	abortController = new AbortController()
+	oldAbortController?.abort(new DOMException('Navigation was superseded', 'AbortError'))
 
 	const canPrecommit = nativePrecommit && ev.cancelable
 	let { id = crypto.randomUUID() } = ev.info?.hop || {}
@@ -61,7 +63,7 @@ async function onNavigate(ev) {
 		return
 	}
 
-	oldAbortController?.abort(new DOMException('Navigation was superseded', 'AbortError'))
+	currentHop = hop
 	document.querySelector(`[${ID_ATTR}]`)?.removeAttribute(ID_ATTR)
 	hop.sourceElement?.setAttribute(ID_ATTR, id)
 
@@ -118,12 +120,12 @@ async function onNavigate(ev) {
 
 			transition.updateCallbackDone.finally(async () => {
 				await runScripts()
-				if (hop.signal.aborted) return
+				if (currentHop !== hop) return
 				send(hop.sourceElement, 'load', { detail: { hop } })
 			})
 
 			transition.finished.finally(() => {
-				if (hop.signal.aborted) return
+				if (currentHop !== hop) return
 				hop.sourceElement?.removeAttribute(ID_ATTR)
 				send(hop.sourceElement, 'after-transition', { detail: { hop } })
 				resetViewTransition()
