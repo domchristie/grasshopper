@@ -33,7 +33,10 @@ async function onNavigate(ev) {
 	oldAbortController?.abort(new DOMException('Navigation was superseded', 'AbortError'))
 
 	const canPrecommit = nativePrecommit && ev.cancelable
-	let { id = crypto.randomUUID() } = ev.info?.hop || {}
+	let { id = crypto.randomUUID(), doc } = ev.info?.hop || {}
+
+	// a non-precommit engine cancels the navigation, then re-issues it after the load
+	const willPrevent = !canPrecommit && ev.navigationType !== 'traverse' && !doc
 
 	const hop = {
 		id,
@@ -48,7 +51,9 @@ async function onNavigate(ev) {
 		...(ev.info?.hop || {}),
 		// all three override a stale value forwarded from a non-precommit flow
 		navEvent: ev,
-		signal: AbortSignal.any([abortController.signal, ev.signal]),
+		signal: willPrevent // preventDefault() aborts ev.signal, so that path uses our controller alone
+			? abortController.signal
+			: AbortSignal.any([abortController.signal, ev.signal]),
 		abort: abortController.abort.bind(abortController)
 	}
 
@@ -69,9 +74,8 @@ async function onNavigate(ev) {
 	document.querySelector(`[${ID_ATTR}]`)?.removeAttribute(ID_ATTR)
 	hop.sourceElement?.setAttribute(ID_ATTR, id)
 
-	if (!canPrecommit && ev.navigationType !== 'traverse' && !hop.doc) {
+	if (willPrevent) {
 		ev.preventDefault()
-		hop.signal = abortController.signal // preventDefault() aborts ev.signal
 		try { await precommitHandler(null) } catch { /* aborted or failed before commit; already prevented */ }
 		return
 	}

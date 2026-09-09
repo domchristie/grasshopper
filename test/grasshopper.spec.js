@@ -2689,6 +2689,37 @@ test.describe('Non-precommit navigation', () => {
 		expect(await getDocumentId(page)).toBe(docId)
 		expect(pageErrors).toEqual([])
 	})
+
+	test('hop.signal captured at before-intercept stays the same object and never aborts', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await noPrecommit(page)
+		await page.addInitScript(() => {
+			window.__sameSignal = null
+			// once: before-intercept fires again for the re-issued navigation on
+			// the non-precommit path, and that hop never calls preventDefault()
+			document.addEventListener('hop:before-intercept', (e) => {
+				window.__capturedSignal = e.detail.hop.signal
+			}, { once: true })
+			document.addEventListener('hop:before-fetch', (e) => {
+				window.__sameSignal = e.detail.hop.signal === window.__capturedSignal
+			})
+			// checked while this hop is still working. After it hands off, the
+			// re-issued navigation supersedes it and aborts the signal for real
+			document.addEventListener('hop:fetch-load', () => {
+				window.__abortedWhileLive = window.__capturedSignal.aborted
+			})
+		})
+
+		await page.goto('/')
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+
+		expect(await page.evaluate(() => window.__abortedWhileLive)).toBe(false)
+		expect(await page.evaluate(() => window.__sameSignal)).toBe(true)
+		expect(pageErrors).toEqual([])
+	})
 })
 
 test.describe('Start/Stop', () => {
