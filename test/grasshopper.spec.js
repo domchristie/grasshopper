@@ -1254,6 +1254,96 @@ test.describe('Swap Events', () => {
 		expect(await getDocumentId(page)).toBe(docId)
 	})
 
+	test('sendInterceptable waits for every intercept callback, not just the last one', async ({ page }) => {
+		await page.goto('/')
+		const docId = await markDocument(page)
+
+		const order = page.evaluate(() => {
+			const order = []
+			const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+			document.addEventListener('hop:before-swap', (e) => e.intercept(async () => {
+				order.push('a-start')
+				await sleep(100)
+				order.push('a-end')
+			}))
+			document.addEventListener('hop:before-swap', (e) => e.intercept(async () => {
+				order.push('b-start')
+				await sleep(600)
+				order.push('b-end')
+			}))
+			document.addEventListener('hop:after-swap', () => order.push('after-swap'))
+			return new Promise(resolve => {
+				document.addEventListener('hop:load', () => resolve(order), { once: true })
+			})
+		})
+
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+		expect(await getDocumentId(page)).toBe(docId)
+
+		// Both callbacks ran (the second listener's callback used to be discarded
+		// entirely), the starts interleave because Promise.all runs them together,
+		// both had *finished* before after-swap, and the swap itself waited for
+		// the slower one - not just 'a-start', 'a-end', 'after-swap'.
+		expect(await order).toEqual(['a-start', 'b-start', 'a-end', 'b-end', 'after-swap'])
+	})
+
+	test('a preventDefault from inside one intercept callback still waits for the others', async ({ page }) => {
+		await page.goto('/')
+		const docId = await markDocument(page)
+
+		const calls = page.evaluate(() => {
+			const calls = []
+			const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+			return new Promise(resolve => {
+				document.addEventListener('hop:before-swap', (e) => e.intercept(async () => {
+					await sleep(100)
+					calls.push('a')
+					e.preventDefault()
+					if (calls.length === 2) resolve(calls)
+				}))
+				document.addEventListener('hop:before-swap', (e) => e.intercept(async () => {
+					await sleep(400)
+					calls.push('b')
+					if (calls.length === 2) resolve(calls)
+				}))
+			})
+		})
+
+		await page.click('a[href="/fixtures/two.html"]')
+		// Both callbacks ran to completion, even though the first one cancelled
+		expect(await calls).toEqual(['a', 'b'])
+
+		// The cancel still prevented the swap
+		await page.waitForTimeout(200)
+		await expect(page).toHaveTitle('Test Hub')
+		expect(await getDocumentId(page)).toBe(docId)
+	})
+
+	// Kept behaviour, not extended by this change: a synchronous preventDefault
+	// makes dispatchEvent() return false, so sendInterceptable returns before it
+	// runs any callback at all - unlike a preventDefault from inside a callback,
+	// which still waits for every other callback (see above).
+	test('a synchronous preventDefault on before-swap skips every intercept callback', async ({ page }) => {
+		await page.goto('/')
+		const docId = await markDocument(page)
+
+		await page.evaluate(() => {
+			window.__ran = false
+			document.addEventListener('hop:before-swap', (e) => e.preventDefault())
+			document.addEventListener('hop:before-swap', (e) => {
+				e.intercept(async () => { window.__ran = true })
+			})
+		})
+
+		await page.click('a[href="/fixtures/two.html"]')
+		await page.waitForTimeout(500)
+
+		expect(await page.evaluate(() => window.__ran)).toBe(false)
+		await expect(page).toHaveTitle('Test Hub')
+		expect(await getDocumentId(page)).toBe(docId)
+	})
+
 	test('after-transition fires after view transition finishes', async ({ page }) => {
 		await page.goto('/')
 

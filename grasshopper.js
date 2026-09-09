@@ -57,7 +57,9 @@ async function onNavigate(ev) {
 		ev.downloadRequest ||
 		isSamePageHash(hop.from, hop.to, hop.sourceElement) ||
 		!enabled(hop.sourceElement) ||
-		!send(hop.sourceElement, 'before-intercept', { detail: { hop }, cancelable: true })
+		// before-intercept is cancelable but synchronous, and fires before the
+		// hop is accepted, so it can't use send()/sendInterceptable()
+		!target(hop.sourceElement).dispatchEvent(createEvent('before-intercept', { detail: { hop }, cancelable: true }))
 	) {
 		abortController = oldAbortController
 		return
@@ -123,13 +125,13 @@ async function onNavigate(ev) {
 			transition.updateCallbackDone.catch(() => {}).then(async () => {
 				await runScripts()
 				if (currentHop !== hop) return
-				send(hop.sourceElement, 'load', { detail: { hop } })
+				send(hop, 'load')
 			})
 
 			transition.finished.catch(() => {}).then(() => {
 				if (currentHop !== hop) return
 				hop.sourceElement?.removeAttribute(ID_ATTR)
-				send(hop.sourceElement, 'after-transition', { detail: { hop } })
+				send(hop, 'after-transition')
 				resetViewTransition()
 			})
 
@@ -147,13 +149,13 @@ async function loadDoc(hop) {
 		hop.timeout
 	)
 	try {
-		if (!await checkpoint(hop, 'before-fetch'))
+		if (!await sendInterceptable(hop, 'before-fetch'))
 			throw new DOMException('before-fetch was cancelled', 'AbortError')
-		send(hop.sourceElement, 'fetch-start', { detail: { hop } })
+		send(hop, 'fetch-start')
 
 		hop.response = await fetch(hop.to.href, hop)
 
-		if (!await checkpoint(hop, 'before-response'))
+		if (!await sendInterceptable(hop, 'before-response'))
 			throw new DOMException('before-response was cancelled', 'AbortError')
 
 		if ([204, 205].includes(hop.response.status))
@@ -181,18 +183,18 @@ async function loadDoc(hop) {
 
 		const links = preloadStyles(hop.doc)
 		await until(Promise.all(links), hop.signal)
-		send(hop.sourceElement, 'fetch-load', { detail: { hop } })
+		send(hop, 'fetch-load')
 	} catch(error) {
 		cancelBody(hop.response?.body)
 		// WebKit rejects with a generic AbortError rather than the signal's
 		// reason, so when the signal aborted, trust it over the thrown error
 		const cause = hop.signal.aborted ? hop.signal.reason : error
 		if (cause?.name === 'TimeoutError' || !(hop.signal.aborted || cause instanceof DOMException))
-			send(hop.sourceElement, 'fetch-error', { detail: { hop, error: cause } })
+			send(hop, 'fetch-error', { error: cause })
 		throw cause
 	} finally {
 		clearTimeout(timer)
-		send(hop.sourceElement, 'fetch-end', { detail: { hop } })
+		send(hop, 'fetch-end')
 	}
 }
 
@@ -221,7 +223,7 @@ async function startViewTransition(options, hop = {}) {
 	if (
 		document.startViewTransition &&
 		!hop.navEvent.hasUAVisualTransition &&
-		await checkpoint(hop, 'before-transition')
+		await sendInterceptable(hop, 'before-transition')
 	) {
 		return document.startViewTransition(options)
 	} else {
@@ -231,13 +233,13 @@ async function startViewTransition(options, hop = {}) {
 }
 
 async function swap(hop) {
-	if (!await checkpoint(hop, 'before-swap')) return
+	if (!await sendInterceptable(hop, 'before-swap')) return
 	swapRootAttributes(hop.doc)
 	swapHeadElements(hop.doc)
 	withRestoredFocus(() => {
 		replace(document.body, hop.doc.body)
 	})
-	send(hop.sourceElement, 'after-swap', { detail: { hop } })
+	send(hop, 'after-swap')
 }
 
 function swapRootAttributes(doc) {
@@ -304,7 +306,7 @@ function attachShadowRoots(root) {
 
 async function scroll(hop) {
 	if (hop.scroll === 'preserve') return
-	if (!await sendInterceptable(hop.sourceElement, 'before-scroll', { detail: { hop }, cancelable: true })) return
+	if (!await sendInterceptable(hop, 'before-scroll')) return
 
 	const isRefresh = (
 		hop.from.pathname === new URL(location.href).pathname
@@ -316,7 +318,7 @@ async function scroll(hop) {
 	if (['push', 'replace'].includes(hop.navEvent.navigationType)) scrollTo(0, 0)
 	hop.navEvent.scroll()
 
-	send(hop.sourceElement, 'after-scroll', { detail: { hop } })
+	send(hop, 'after-scroll')
 }
 
 export function runScripts() {
@@ -367,22 +369,20 @@ const createEvent = (type, options = {}) =>
 
 const target = (el) => el?.isConnected ? el : document
 
-const send = (el, type, options = {}) =>
-	target(el).dispatchEvent(createEvent(type, options))
+const send = (hop, type, detail) =>
+	target(hop.sourceElement).dispatchEvent(createEvent(type, { detail: { hop, ...detail } }))
 
-async function sendInterceptable(el, type, options = {}) {
-	let ev = createEvent(type, options)
-	let intercept = () => Promise.resolve(true)
-	ev.intercept = (callback) => intercept = callback
-	return target(el).dispatchEvent(ev) && (await intercept(), !ev.defaultPrevented)
-}
+async function sendInterceptable(hop, type, detail) {
+	const ev = createEvent(type, { detail: { hop, ...detail }, cancelable: true })
+	const callbacks = []
+	ev.intercept = (callback) => callbacks.push(callback)
 
-async function checkpoint(hop, type, detail = {}) {
-	const ok = await sendInterceptable(hop.sourceElement, type, {
-		detail: { hop, ...detail }, cancelable: true
-	})
 	hop.signal.throwIfAborted()
-	return ok
+	if (!target(hop.sourceElement).dispatchEvent(ev)) return false
+	await Promise.all(callbacks.map(cb => cb()))
+	hop.signal.throwIfAborted()
+
+	return !ev.defaultPrevented
 }
 
 const nullTransition = () => ({
@@ -432,7 +432,7 @@ function trackedElementsChanged(doc) {
 async function tryFallback(hop, message, name, reason) {
 	const error = new DOMException(message, name)
 	try {
-		if (await checkpoint(hop, 'before-fallback', { error, reason })
+		if (await sendInterceptable(hop, 'before-fallback', { error, reason })
 			&& canFallback(hop.response, hop.navEvent))
 			fallback(hop.response?.url || hop.to.href)
 	} finally {
