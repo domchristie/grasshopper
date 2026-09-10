@@ -114,7 +114,7 @@ async function onNavigate(ev) {
 			if (canFallback(hop.response, ev) && trackedElementsChanged(hop.doc))
 				return withBypass(() => location.reload())
 
-			const transition = viewTransition = await startViewTransition({
+			const transition = await startViewTransition({
 				update: async () => (await swap(hop), await scroll(hop)),
 				types: [hop.direction]
 			}, hop)
@@ -222,17 +222,21 @@ function preloadStyles(doc, signal) {
 		})
 }
 
-async function startViewTransition(options, hop = {}) {
+async function startViewTransition(options, hop) {
 	if (
 		document.startViewTransition &&
 		!hop.navEvent.hasUAVisualTransition &&
 		await sendInterceptable(hop, 'before-transition')
-	) {
-		return document.startViewTransition(options)
-	} else {
-		await (typeof options === 'function' ? options : options.update)()
-		return nullTransition()
+	) return viewTransition = document.startViewTransition(options)
+
+	const done = options.update()
+	const transition = viewTransition = {
+		ready: done,
+		updateCallbackDone: done,
+		finished: done,
+		skipTransition: () => {}
 	}
+	return await done, transition
 }
 
 async function swap(hop) {
@@ -388,14 +392,12 @@ async function sendInterceptable(hop, type, detail) {
 	return !ev.defaultPrevented
 }
 
-const nullTransition = () => ({
+const resetViewTransition = () => viewTransition = {
 	ready: Promise.resolve(),
 	updateCallbackDone: Promise.resolve(),
 	finished: Promise.resolve(),
 	skipTransition: () => {}
-})
-
-const resetViewTransition = () => viewTransition = nullTransition()
+}
 
 function enabled(el) {
 	if (el instanceof Element) {
