@@ -57,6 +57,8 @@ async function onNavigate(ev) {
 		abort: abortController.abort.bind(abortController)
 	}
 
+	const previousHop = currentHop
+
 	if (
 		!ev.canIntercept ||
 		ev.downloadRequest ||
@@ -64,7 +66,7 @@ async function onNavigate(ev) {
 		!enabled(hop.sourceElement) ||
 		// cancelable but synchronous so can't use send()/sendInterceptable()
 		!target(hop.sourceElement).dispatchEvent(createEvent('before-intercept', { detail: { hop }, cancelable: true })) ||
-		hop.signal.aborted // a before-intercept listener may have superseded
+		currentHop !== previousHop // check for superseded nav in before-intercept
 	) return
 
 	currentHop = hop

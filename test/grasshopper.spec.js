@@ -2390,6 +2390,28 @@ test.describe('Re-entrant navigation', () => {
 		expect(pageErrors).toEqual([])
 	})
 
+	test('hop.abort() in before-intercept cancels rather than navigating', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.goto('/')
+		const docId = await markDocument(page)
+
+		await page.evaluate(() => {
+			document.addEventListener('hop:before-intercept', (e) => e.detail.hop.abort(), { once: true })
+		})
+
+		await page.click('a[href="/fixtures/two.html"]')
+		await page.waitForTimeout(500)
+
+		// aborting must stop the navigation, not hand it to the browser as a
+		// full page load -- same document, same URL, same title
+		await expect(page).toHaveTitle('Test Hub')
+		expect(new URL(page.url()).pathname).toBe('/')
+		expect(await getDocumentId(page)).toBe(docId)
+		expect(pageErrors).toEqual([])
+	})
+
 	test('a navigation started from fetch-end is not overridden', async ({ page }) => {
 		const pageErrors = []
 		page.on('pageerror', (err) => pageErrors.push(err))
