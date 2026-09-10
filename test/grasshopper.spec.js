@@ -1412,6 +1412,7 @@ test.describe('Swap Events', () => {
 		await expect(page).toHaveTitle('Persistence')
 		expect(pageErrors).toEqual([])
 	})
+
 })
 
 test.describe('Scroll Events', () => {
@@ -2049,6 +2050,33 @@ test.describe('Stylesheet preloading', () => {
 		expect(fetchEnds).toContain('/fixtures/track.html')
 		await expect(page).toHaveTitle('Two')
 		expect(pageErrors).toEqual([])
+	})
+
+	test('a timed-out hop removes its preload links from head', async ({ page }) => {
+		// Superseding the navigation would also clean this up via
+		// swapHeadElements on the next hop's successful swap, which would
+		// pass whether or not the abort itself cleans up. Timing the hop out
+		// with nothing to supersede it isolates the leak fix.
+		await page.route('**/styles.css?v=1', async (route) => {
+			await new Promise((r) => setTimeout(r, 10000))
+			await route.abort()
+		})
+
+		await page.addInitScript(() => {
+			document.addEventListener('hop:before-intercept', (e) => {
+				e.detail.hop.timeout = 400
+			})
+		})
+
+		await page.goto('/')
+		const docId = await markDocument(page)
+
+		await page.click('a[href="/fixtures/track.html"]')
+		await page.waitForTimeout(1500)
+
+		await expect(page).toHaveTitle('Test Hub')
+		expect(await getDocumentId(page)).toBe(docId)
+		expect(await page.evaluate(() => document.querySelectorAll('link[rel=preload]').length)).toBe(0)
 	})
 })
 
