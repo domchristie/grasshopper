@@ -3,9 +3,9 @@ const DISABLED_ATTR = 'data-hop'
 const TRACK_ATTR = 'data-hop-track'
 const DEFAULT_TIMEOUT = 60000
 const nativePrecommit = !!self.NavigationPrecommitController
+const parser = new DOMParser()
 
 let started = false
-let parser
 let abortController
 let viewTransition
 let bypass
@@ -65,7 +65,6 @@ async function onNavigate(ev) {
 		// hop is accepted, so it can't use send()/sendInterceptable()
 		!target(hop.sourceElement).dispatchEvent(createEvent('before-intercept', { detail: { hop }, cancelable: true }))
 	) {
-		abortController = oldAbortController
 		return
 	}
 
@@ -173,7 +172,6 @@ async function loadDoc(hop) {
 		}
 
 		const text = await hop.response.text()
-		parser = parser || new DOMParser()
 		hop.doc = parser.parseFromString(text, mediaType)
 		hop.doc.querySelectorAll('noscript').forEach((el) => el.remove())
 
@@ -435,13 +433,9 @@ function trackedElementsChanged(doc) {
 
 async function tryFallback(hop, message, name, reason) {
 	const error = new DOMException(message, name)
-	try {
-		if (await sendInterceptable(hop, 'before-fallback', { error, reason })
-			&& canFallback(hop.response, hop.navEvent))
-			fallback(hop.response?.url || hop.to.href)
-	} finally {
-		cancelBody(hop.response?.body)
-	}
+	if (await sendInterceptable(hop, 'before-fallback', { error, reason })
+		&& canFallback(hop.response, hop.navEvent))
+		fallback(hop.response?.url || hop.to.href)
 	return error
 }
 
