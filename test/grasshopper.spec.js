@@ -1220,9 +1220,12 @@ test.describe('Swap Events', () => {
 		await page.goto('/')
 		const docId = await markDocument(page)
 
-		await page.evaluate(() => {
+		const loaded = page.evaluate(() => {
 			document.addEventListener('hop:before-swap', (e) => {
 				e.preventDefault()
+			})
+			return new Promise((resolve) => {
+				document.addEventListener('hop:load', () => resolve(true), { once: true })
 			})
 		})
 
@@ -1231,6 +1234,9 @@ test.describe('Swap Events', () => {
 		// Swap was prevented so title stays
 		await expect(page).toHaveTitle('Test Hub')
 		expect(await getDocumentId(page)).toBe(docId)
+		// A cancelled before-swap does not throw -- swap() returns early --
+		// so the update callback still resolves and hop:load must still fire
+		expect(await loaded).toBe(true)
 	})
 
 	test('a listener parked forever in before-swap does not block a later navigation', async ({ page }) => {
@@ -2316,6 +2322,38 @@ test.describe('hop:load', () => {
 
 		const loads = await page.evaluate(() => window.__loads)
 		expect(loads).toContain('/fixtures/scripts-target.html')
+		expect(pageErrors).toEqual([])
+	})
+
+	test('does not fire when a before-swap intercept aborts the hop', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.addInitScript(() => {
+			window.__events = []
+			// Deliberately does NOT force the null-transition path: the bug this
+			// covers only reproduces via a real document.startViewTransition().
+			// On the null-transition path handler() throws before it ever
+			// attaches the updateCallbackDone handler, so the fix would be
+			// unreachable and this test would pass vacuously either way.
+			document.addEventListener('hop:before-swap', (e) => {
+				window.__events.push('before-swap')
+				e.intercept(() => { e.detail.hop.abort() })
+			})
+			document.addEventListener('hop:load', () => {
+				window.__events.push('load')
+			})
+		})
+
+		await page.goto('/')
+		await page.click('a[href="/fixtures/two.html"]')
+		await page.waitForTimeout(500)
+
+		const events = await page.evaluate(() => window.__events)
+		// Positive control: the navigation reached before-swap, so this
+		// assertion can't pass simply because nothing happened at all
+		expect(events).toContain('before-swap')
+		expect(events).not.toContain('load')
 		expect(pageErrors).toEqual([])
 	})
 })

@@ -121,13 +121,12 @@ async function onNavigate(ev) {
 
 			transition.ready.catch(() => {})
 
-			// catch first: a failed transition is already reported through this
-			// handler's return value, but our own failures below are not
-			transition.updateCallbackDone.catch(() => {}).then(async () => {
+			// Prevents load being triggered when update fails
+			transition.updateCallbackDone.then(async () => {
 				await runScripts()
 				if (currentHop !== hop) return
 				send(hop, 'load')
-			})
+			}, () => { /* already handled by handler's return value below */ })
 
 			transition.finished.catch(() => {}).then(() => {
 				if (currentHop !== hop) return
