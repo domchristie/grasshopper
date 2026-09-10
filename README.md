@@ -299,7 +299,7 @@ Each navigation is assigned a UUID. The ID is:
 
 ## Browser Support
 
-Requires the [Navigation API](https://caniuse.com/wf-navigation), and [AbortSignal.any](AbortSignal.any).
+Requires the [Navigation API](https://caniuse.com/wf-navigation), and [AbortSignal.any]([AbortSignal.any](https://caniuse.com/wf-abortsignal-any)).
 
 ## Attributes Reference
 
