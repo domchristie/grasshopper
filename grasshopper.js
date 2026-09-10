@@ -215,7 +215,7 @@ function preloadStyles(doc, signal) {
 			const done = new AbortController()
 			return new Promise((resolve) => {
 				for (const type of ['load', 'error']) link.addEventListener(type, resolve, { signal: done.signal })
-				signal.addEventListener('abort', () => link.remove(), { once: true, signal: done.signal })
+				signal.addEventListener('abort', () => (link.remove(), resolve()), { once: true, signal: done.signal })
 				document.head.append(link)
 			}).finally(() => done.abort())
 		})
