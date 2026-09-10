@@ -382,7 +382,7 @@ async function sendInterceptable(hop, type, detail) {
 
 	hop.signal.throwIfAborted()
 	if (!target(hop.sourceElement).dispatchEvent(ev)) return false
-	await Promise.all(callbacks.map(cb => cb()))
+	await until(Promise.all(callbacks.map(cb => cb())), hop.signal)
 	hop.signal.throwIfAborted()
 
 	return !ev.defaultPrevented

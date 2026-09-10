@@ -1233,6 +1233,38 @@ test.describe('Swap Events', () => {
 		expect(await getDocumentId(page)).toBe(docId)
 	})
 
+	test('a listener parked forever in before-swap does not block a later navigation', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.addInitScript(() => {
+			// only the first navigation parks, and never resolves. Without the
+			// signal race the second one waits on its updateCallbackDone forever
+			document.addEventListener('hop:before-swap', (e) => {
+				if (e.detail.hop.to.pathname === '/fixtures/two.html')
+					e.intercept(() => new Promise(() => {}))
+			})
+		})
+
+		await page.goto('/')
+
+		await page.evaluate(() => {
+			const r = navigation.navigate('/fixtures/two.html')
+			r.committed.catch(() => {})
+			r.finished.catch(() => {})
+		})
+		await page.waitForTimeout(200)
+
+		await page.evaluate(() => {
+			const r = navigation.navigate('/fixtures/persist.html')
+			r.committed.catch(() => {})
+			r.finished.catch(() => {})
+		})
+
+		await expect(page).toHaveTitle('Persistence')
+		expect(pageErrors).toEqual([])
+	})
+
 	test('calling preventDefault inside intercept callback prevents the swap', async ({ page }) => {
 		await page.goto('/')
 		const docId = await markDocument(page)
@@ -2147,8 +2179,9 @@ test.describe('Superseded navigations', () => {
 		await page.goto('/fixtures/track.html')
 		const docId = await markDocument(page)
 
-		// nav1: swaps immediately, then parks in before-scroll for 1500ms --
-		// keeping its own transition's updateCallbackDone unresolved.
+		// nav1: swaps immediately, then parks in before-scroll for 1500ms,
+		// keeping its own transition's updateCallbackDone unresolved --
+		// unless something supersedes it first (nav2 below does).
 		await page.evaluate(() => {
 			const r = navigation.navigate('/fixtures/track-same.html')
 			r.committed.catch(() => {})
@@ -2156,26 +2189,23 @@ test.describe('Superseded navigations', () => {
 		})
 		await page.waitForTimeout(300)
 
-		// nav2: will call viewTransition.skipTransition() then await nav1's
-		// still-pending updateCallbackDone. Its tracked stylesheet differs
-		// from the live document (still showing track-same.html's v=1
-		// stylesheet), so if it isn't stopped right after that await, it
-		// would call location.reload().
+		// nav2 and nav3 in one task, deliberately. nav2's tracked stylesheet
+		// differs from the live document, so if it is not stopped it would
+		// call location.reload(). Creating nav2 aborts nav1, which releases
+		// nav1's parked callback, so nav2's await resolves on the next
+		// microtask -- there is no long wait left to supersede partway
+		// through. nav3, created in the same task, aborts nav2 first, so
+		// nav2 wakes and throws at throwIfAborted before the reload check.
+		// nav3 targets track.html, the same tracked stylesheet as the live
+		// document, so nav3 itself never trips trackedElementsChanged --
+		// isolating nav2's behaviour as the only possible cause of a reload.
 		await page.evaluate(() => {
-			const r = navigation.navigate('/fixtures/track-changed.html')
-			r.committed.catch(() => {})
-			r.finished.catch(() => {})
-		})
-		await page.waitForTimeout(100)
-
-		// nav3: supersedes nav2 while nav2 is still parked awaiting nav1's
-		// transition. Targets track.html (same tracked stylesheet as the
-		// live document) so nav3 itself never trips trackedElementsChanged --
-		// isolating nav2's behavior as the only possible cause of a reload.
-		await page.evaluate(() => {
-			const r = navigation.navigate('/fixtures/track.html')
-			r.committed.catch(() => {})
-			r.finished.catch(() => {})
+			const r2 = navigation.navigate('/fixtures/track-changed.html')
+			r2.committed.catch(() => {})
+			r2.finished.catch(() => {})
+			const r3 = navigation.navigate('/fixtures/track.html')
+			r3.committed.catch(() => {})
+			r3.finished.catch(() => {})
 		})
 
 		// Past nav1's park, plenty of time for nav2/nav3 to settle.
