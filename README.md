@@ -310,7 +310,6 @@ Requires the [Navigation API](https://caniuse.com/mdn-api_navigation).
 | `data-hop` | `"false"` | Disables fetch navigation on this element and descendants. |
 | `data-hop-type` | `"replace"` | Uses `replaceState` instead of `pushState`. |
 | `data-hop-track` | `"reload"` | Triggers full reload if element changes between pages. |
-| `data-hop-id` | UUID | Set automatically on the source element during navigation. |
 
 ## Meta Tags Reference
 

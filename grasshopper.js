@@ -1,7 +1,6 @@
 const PERSIST_ATTR = 'data-hop-persist'
 const DISABLED_ATTR = 'data-hop'
 const TRACK_ATTR = 'data-hop-track'
-const ID_ATTR = 'data-hop-id'
 const DEFAULT_TIMEOUT = 60000
 const nativePrecommit = !!self.NavigationPrecommitController
 
@@ -71,8 +70,6 @@ async function onNavigate(ev) {
 	}
 
 	currentHop = hop
-	document.querySelector(`[${ID_ATTR}]`)?.removeAttribute(ID_ATTR)
-	hop.sourceElement?.setAttribute(ID_ATTR, id)
 
 	if (willPrevent) {
 		ev.preventDefault()
@@ -134,7 +131,6 @@ async function onNavigate(ev) {
 
 			transition.finished.catch(() => {}).then(() => {
 				if (currentHop !== hop) return
-				hop.sourceElement?.removeAttribute(ID_ATTR)
 				send(hop, 'after-transition')
 				resetViewTransition()
 			})

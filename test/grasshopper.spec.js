@@ -2280,61 +2280,6 @@ test.describe('Navigation ID', () => {
 		expect(await id).toMatch(UUID_RE)
 	})
 
-	test('data-hop-id is set on source element during navigation', async ({ page }) => {
-		await page.goto('/')
-		const result = page.evaluate(() => {
-			return new Promise(resolve => {
-				document.addEventListener('hop:before-fetch', (e) => {
-					const el = e.detail.hop.sourceElement
-					resolve({
-						attr: el.getAttribute('data-hop-id'),
-						id: e.detail.hop.id
-					})
-				}, { once: true })
-			})
-		})
-
-		await page.click('a[href="/fixtures/two.html"]')
-		await expect(page).toHaveTitle('Two')
-
-		const { attr, id } = await result
-		expect(attr).toBe(id)
-		expect(attr).toMatch(UUID_RE)
-	})
-
-	test('data-hop-id is removed after navigation completes', async ({ page }) => {
-		await page.goto('/')
-		const done = page.evaluate(() => {
-			return new Promise(resolve => {
-				document.addEventListener('hop:after-transition', () => resolve(), { once: true })
-			})
-		})
-
-		await page.click('a[href="/fixtures/two.html"]')
-		await done
-		const count = await page.locator('[data-hop-id]').count()
-		expect(count).toBe(0)
-	})
-
-	test('x-hop-id header is sent with fetch request', async ({ page }) => {
-		await page.goto('/')
-		const id = page.evaluate(() => {
-			return new Promise(resolve => {
-				document.addEventListener('hop:before-intercept', (e) => {
-					resolve(e.detail.hop.id)
-				}, { once: true })
-			})
-		})
-
-		const request = page.waitForRequest(req =>
-			req.url().includes('/fixtures/two.html') && req.headers()['x-hop-id']
-		)
-
-		await page.click('a[href="/fixtures/two.html"]')
-		const req = await request
-		expect(req.headers()['x-hop-id']).toBe(await id)
-	})
-
 	test('each navigation gets a unique ID', async ({ page }) => {
 		await page.goto('/')
 		const ids = page.evaluate(() => {
@@ -2384,18 +2329,23 @@ test.describe('Navigation ID', () => {
 		expect(loadId).toBe(interceptId)
 	})
 
-	test('abort cleans up data-hop-id from previous source element', async ({ page }) => {
+	test('x-hop-id header is sent with fetch request', async ({ page }) => {
 		await page.goto('/')
-		// Start slow navigation
-		page.click('a[href="/slow"]')
-		await page.waitForTimeout(200)
-		// Abort by navigating elsewhere
-		await page.click('a[href="/fixtures/two.html"]')
-		await expect(page).toHaveTitle('Two')
+		const id = page.evaluate(() => {
+			return new Promise(resolve => {
+				document.addEventListener('hop:before-intercept', (e) => {
+					resolve(e.detail.hop.id)
+				}, { once: true })
+			})
+		})
 
-		// Only the current (or no) element should have data-hop-id
-		const count = await page.locator('[data-hop-id]').count()
-		expect(count).toBeLessThanOrEqual(1)
+		const request = page.waitForRequest(req =>
+			req.url().includes('/fixtures/two.html') && req.headers()['x-hop-id']
+		)
+
+		await page.click('a[href="/fixtures/two.html"]')
+		const req = await request
+		expect(req.headers()['x-hop-id']).toBe(await id)
 	})
 })
 
