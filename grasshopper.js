@@ -2,6 +2,7 @@ const PERSIST_ATTR = 'data-hop-persist'
 const DISABLED_ATTR = 'data-hop'
 const TRACK_ATTR = 'data-hop-track'
 const DEFAULT_TIMEOUT = 60000
+const supported = 'navigation' in window && 'any' in AbortSignal
 const nativePrecommit = !!self.NavigationPrecommitController
 const parser = new DOMParser()
 
@@ -12,7 +13,7 @@ let bypass
 let currentHop
 
 export function start() {
-	if (started || !enabled() || !('navigation' in window)) return
+	if (started || !supported || !enabled()) return
 	resetViewTransition()
 	navigation.addEventListener('navigate', onNavigate)
 	started = true
