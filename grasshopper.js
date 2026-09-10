@@ -62,12 +62,10 @@ async function onNavigate(ev) {
 		ev.downloadRequest ||
 		isSamePageHash(hop.from, hop.to, hop.sourceElement) ||
 		!enabled(hop.sourceElement) ||
-		// before-intercept is cancelable but synchronous, and fires before the
-		// hop is accepted, so it can't use send()/sendInterceptable()
-		!target(hop.sourceElement).dispatchEvent(createEvent('before-intercept', { detail: { hop }, cancelable: true }))
-	) {
-		return
-	}
+		// cancelable but synchronous so can't use send()/sendInterceptable()
+		!target(hop.sourceElement).dispatchEvent(createEvent('before-intercept', { detail: { hop }, cancelable: true })) ||
+		hop.signal.aborted // a before-intercept listener may have superseded
+	) return
 
 	currentHop = hop
 
@@ -192,6 +190,7 @@ async function loadDoc(hop) {
 	} finally {
 		clearTimeout(timer)
 		send(hop, 'fetch-end')
+		hop.signal.throwIfAborted() // a fetch-end listener may have superseded
 	}
 }
 

@@ -2358,6 +2358,70 @@ test.describe('hop:load', () => {
 	})
 })
 
+test.describe('Re-entrant navigation', () => {
+	test('a navigation started from before-intercept keeps its own hop:load', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.addInitScript(() => {
+			window.__loads = []
+			document.addEventListener('hop:load', (e) => window.__loads.push(e.detail.hop.to.pathname))
+			// before-intercept dispatches synchronously, so this re-enters
+			// onNavigate and the nested hop becomes currentHop
+			document.addEventListener('hop:before-intercept', function once (e) {
+				if (e.detail.hop.to.pathname !== '/fixtures/two.html') return
+				document.removeEventListener('hop:before-intercept', once)
+				const r = navigation.navigate('/fixtures/persist.html')
+				r.committed.catch(() => {})
+				r.finished.catch(() => {})
+			})
+		})
+
+		await page.goto('/')
+		await page.evaluate(() => {
+			const r = navigation.navigate('/fixtures/two.html')
+			r.committed.catch(() => {})
+			r.finished.catch(() => {})
+		})
+
+		await expect(page).toHaveTitle('Persistence')
+		// the replacement hop must not lose its events to the stale outer one
+		expect(await page.evaluate(() => window.__loads)).toContain('/fixtures/persist.html')
+		expect(pageErrors).toEqual([])
+	})
+
+	test('a navigation started from fetch-end is not overridden', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		// the re-issue only happens on the non-precommit path, where
+		// precommitHandler calls navigation.navigate() itself
+		await noPrecommit(page)
+		await page.addInitScript(() => {
+			// fetch-end dispatches synchronously from loadDoc's finally, so the
+			// outer hop can still re-issue its stale destination afterwards
+			document.addEventListener('hop:fetch-end', function once (e) {
+				if (e.detail.hop.to.pathname !== '/fixtures/two.html') return
+				document.removeEventListener('hop:fetch-end', once)
+				const r = navigation.navigate('/fixtures/persist.html')
+				r.committed.catch(() => {})
+				r.finished.catch(() => {})
+			})
+		})
+
+		await page.goto('/')
+		await page.evaluate(() => {
+			const r = navigation.navigate('/fixtures/two.html')
+			r.committed.catch(() => {})
+			r.finished.catch(() => {})
+		})
+
+		await expect(page).toHaveTitle('Persistence')
+		expect(new URL(page.url()).pathname).toBe('/fixtures/persist.html')
+		expect(pageErrors).toEqual([])
+	})
+})
+
 test.describe('Navigation ID', () => {
 	const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
