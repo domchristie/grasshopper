@@ -281,7 +281,6 @@ The load phase (fetch, parse, and stylesheet preload) has a default timeout of `
 Each navigation is assigned a UUID. The ID is:
 
 - Available as `hop.id` in all event details
-- Set as a `data-hop-id` attribute on the source element during navigation (removed after the transition completes)
 - Sent as an `x-hop-id` header with the fetch request
 
 ## How It Works
