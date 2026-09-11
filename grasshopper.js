@@ -172,7 +172,7 @@ async function loadDoc(hop) {
 		if (!enabled(hop.doc))
 			throw await tryFallback(hop, 'Destination document has disabled Grasshopper', 'NotAllowedError', 'disabled')
 
-		await until(Promise.all(preloadStyles(hop.doc, hop.signal)), hop.signal)
+		await until(Promise.all(preloadStyles(hop.doc)), hop.signal)
 		send(hop, 'fetch-load')
 	} catch(error) {
 		cancelBody(hop.response?.body)
@@ -189,9 +189,7 @@ async function loadDoc(hop) {
 	}
 }
 
-function preloadStyles(doc, signal) {
-	if (signal.aborted) return []
-
+function preloadStyles(doc) {
 	const oldEls = [...document.querySelectorAll('head link[rel=stylesheet]')]
 	const newEls = [...doc.querySelectorAll('head link[rel=stylesheet]')]
 
@@ -205,12 +203,8 @@ function preloadStyles(doc, signal) {
 			link.setAttribute('rel', 'preload')
 			link.setAttribute('as', 'style')
 			link.setAttribute('href', el.getAttribute('href'))
-			const done = new AbortController()
-			return new Promise((resolve) => {
-				for (const type of ['load', 'error']) link.addEventListener(type, resolve, { signal: done.signal })
-				signal.addEventListener('abort', () => (link.remove(), resolve()), { once: true, signal: done.signal })
-				document.head.append(link)
-			}).finally(() => done.abort())
+			document.head.append(link)
+			return new Promise((resolve) => link.onload = link.onerror = resolve)
 		})
 }
 
