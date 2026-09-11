@@ -10,7 +10,6 @@ let started = false
 let abortController
 let viewTransition
 let bypass
-let currentHop
 
 export function start() {
 	if (started || !supported || !enabled()) return
@@ -66,8 +65,6 @@ async function onNavigate(ev) {
 		!target(hop.sourceElement).dispatchEvent(createEvent('before-intercept', { detail: { hop }, cancelable: true }))
 	) return
 
-	currentHop = hop
-
 	if (willPrevent) {
 		ev.preventDefault()
 		try { await precommitHandler(null) } catch { /* aborted or failed before commit; already prevented */ }
@@ -121,14 +118,13 @@ async function onNavigate(ev) {
 			// Prevents load being triggered when update fails
 			transition.updateCallbackDone.then(async () => {
 				await runScripts()
-				if (currentHop !== hop) return
+				if (viewTransition !== transition) return
 				send(hop, 'load')
 			}, () => { /* already handled by handler's return value below */ })
 
 			transition.finished.catch(() => {}).then(() => {
-				if (currentHop !== hop) return
+				if (viewTransition !== transition) return
 				send(hop, 'after-transition')
-				resetViewTransition()
 			})
 
 			return transition.updateCallbackDone

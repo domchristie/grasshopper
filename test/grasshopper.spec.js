@@ -2325,6 +2325,53 @@ test.describe('hop:load', () => {
 		expect(pageErrors).toEqual([])
 	})
 
+	for (const precommit of [true, false]) {
+		test(`still fires when a newer hop is cancelled before it swaps${precommit ? '' : ' (non-precommit)'}`, async ({ page }) => {
+			const pageErrors = []
+			page.on('pageerror', (err) => pageErrors.push(err))
+
+			if (!precommit) await noPrecommit(page)
+			await page.route('**/fixtures/scripts-external.js', async (route) => {
+				await new Promise((r) => setTimeout(r, 1500))
+				await route.continue()
+			})
+
+			await page.addInitScript(() => {
+				window.__loads = []
+				document.addEventListener('hop:load', (e) => {
+					window.__loads.push(e.detail.hop.to.pathname)
+				})
+				// the newer hop is accepted, then cancelled before it swaps
+				document.addEventListener('hop:before-fetch', (e) => {
+					if (e.detail.hop.to.pathname === '/fixtures/two.html') e.preventDefault()
+				})
+			})
+
+			await page.goto('/')
+
+			await page.evaluate(() => {
+				const r = navigation.navigate('/fixtures/scripts-target.html')
+				r.committed.catch(() => {})
+				r.finished.catch(() => {})
+			})
+
+			// Swapped, but runScripts() is still pending on the slow external script
+			await page.waitForTimeout(400)
+
+			await page.evaluate(() => {
+				const r = navigation.navigate('/fixtures/two.html')
+				r.committed.catch(() => {})
+				r.finished.catch(() => {})
+			})
+
+			await page.waitForTimeout(2500)
+
+			const loads = await page.evaluate(() => window.__loads)
+			expect(loads).toContain('/fixtures/scripts-target.html')
+			expect(pageErrors).toEqual([])
+		})
+	}
+
 	test('does not fire when a before-swap intercept aborts the hop', async ({ page }) => {
 		const pageErrors = []
 		page.on('pageerror', (err) => pageErrors.push(err))
