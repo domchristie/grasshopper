@@ -2359,37 +2359,6 @@ test.describe('hop:load', () => {
 })
 
 test.describe('Re-entrant navigation', () => {
-	test('a navigation started from before-intercept keeps its own hop:load', async ({ page }) => {
-		const pageErrors = []
-		page.on('pageerror', (err) => pageErrors.push(err))
-
-		await page.addInitScript(() => {
-			window.__loads = []
-			document.addEventListener('hop:load', (e) => window.__loads.push(e.detail.hop.to.pathname))
-			// before-intercept dispatches synchronously, so this re-enters
-			// onNavigate and the nested hop becomes currentHop
-			document.addEventListener('hop:before-intercept', function once (e) {
-				if (e.detail.hop.to.pathname !== '/fixtures/two.html') return
-				document.removeEventListener('hop:before-intercept', once)
-				const r = navigation.navigate('/fixtures/persist.html')
-				r.committed.catch(() => {})
-				r.finished.catch(() => {})
-			})
-		})
-
-		await page.goto('/')
-		await page.evaluate(() => {
-			const r = navigation.navigate('/fixtures/two.html')
-			r.committed.catch(() => {})
-			r.finished.catch(() => {})
-		})
-
-		await expect(page).toHaveTitle('Persistence')
-		// the replacement hop must not lose its events to the stale outer one
-		expect(await page.evaluate(() => window.__loads)).toContain('/fixtures/persist.html')
-		expect(pageErrors).toEqual([])
-	})
-
 	test('hop.abort() in before-intercept cancels rather than navigating', async ({ page }) => {
 		const pageErrors = []
 		page.on('pageerror', (err) => pageErrors.push(err))

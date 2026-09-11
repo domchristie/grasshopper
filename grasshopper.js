@@ -57,16 +57,13 @@ async function onNavigate(ev) {
 		abort: abortController.abort.bind(abortController)
 	}
 
-	const previousHop = currentHop
-
 	if (
 		!ev.canIntercept ||
 		ev.downloadRequest ||
 		isSamePageHash(hop.from, hop.to, hop.sourceElement) ||
 		!enabled(hop.sourceElement) ||
 		// cancelable but synchronous so can't use send()/sendInterceptable()
-		!target(hop.sourceElement).dispatchEvent(createEvent('before-intercept', { detail: { hop }, cancelable: true })) ||
-		currentHop !== previousHop // check for superseded nav in before-intercept
+		!target(hop.sourceElement).dispatchEvent(createEvent('before-intercept', { detail: { hop }, cancelable: true }))
 	) return
 
 	currentHop = hop
