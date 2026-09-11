@@ -283,7 +283,7 @@ It does not fire if the navigation aborts during the swap, or if a newer navigat
 ### `hop:after-transition`
 
 Fires after the view transition finishes.
-It does not fire if a newer navigation has taken over.
+It does not fire if the swap or scroll fails or aborts, or if a newer navigation has taken over.
 
 ## Hop Object
 

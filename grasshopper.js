@@ -122,10 +122,10 @@ async function onNavigate(ev) {
 				send(hop, 'load')
 			}, () => { /* already handled by handler's return value below */ })
 
-			transition.finished.catch(() => {}).then(() => {
+			transition.finished.then(() => {
 				if (viewTransition !== transition) return
 				send(hop, 'after-transition')
-			})
+			}, () => {})
 
 			return transition.updateCallbackDone
 		},

@@ -1400,6 +1400,38 @@ test.describe('Swap Events', () => {
 		expect(result.hasHop).toBe(true)
 	})
 
+	test('after-transition does not fire when the swap aborts', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.addInitScript(() => {
+			window.__events = []
+			// Deliberately does NOT force the null-transition path: the bug this
+			// covers only reproduces via a real document.startViewTransition().
+			// On the null-transition path handler() throws before finished is
+			// ever attached to, so the fix would be unreachable and this test
+			// would pass vacuously either way.
+			document.addEventListener('hop:before-swap', (e) => {
+				window.__events.push('before-swap')
+				e.detail.hop.abort()
+			})
+			document.addEventListener('hop:after-transition', () => {
+				window.__events.push('after-transition')
+			})
+		})
+
+		await page.goto('/')
+		await page.click('a[href="/fixtures/two.html"]')
+		await page.waitForTimeout(500)
+
+		const events = await page.evaluate(() => window.__events)
+		// Positive control: the navigation reached before-swap, so this
+		// assertion can't pass simply because nothing happened at all
+		expect(events).toContain('before-swap')
+		expect(events).not.toContain('after-transition')
+		expect(pageErrors).toEqual([])
+	})
+
 	test('a hop superseded while parked in before-swap does not swap', async ({ page }) => {
 		const pageErrors = []
 		page.on('pageerror', (err) => pageErrors.push(err))
