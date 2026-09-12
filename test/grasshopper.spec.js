@@ -9,8 +9,27 @@ async function getDocumentId(page) {
 }
 
 // Forces the non-precommit code path (Safari, and Chrome before 141)
-const noPrecommit = (page) =>
+const forceNoPrecommit = (page) =>
 	page.addInitScript(() => { delete self.NavigationPrecommitController })
+
+// The event fires just before a real full-page navigation, which would tear down
+// a page.evaluate()-hosted Promise mid-flight. Bridge the detail back to Node via
+// exposeFunction instead, so it survives that navigation.
+async function watchFallback(page) {
+	let resolveDetail
+	const detail = new Promise((r) => (resolveDetail = r))
+	await page.exposeFunction('__reportFallback', (d) => resolveDetail(d))
+	await page.evaluate(() => {
+		document.addEventListener('hop:before-fallback', (e) => {
+			window.__reportFallback({
+				reason: e.detail.reason,
+				hasHop: !!e.detail.hop,
+				hasError: !!e.detail.error,
+			})
+		}, { once: true })
+	})
+	return { detail }
+}
 
 test.describe('Basic Navigation', () => {
 	test('push navigation keeps same document', async ({ page }) => {
@@ -122,7 +141,7 @@ test.describe('Fragments', () => {
 		await page.click('a[href="/fixtures/fragment.html#target"]')
 		await expect(page).toHaveURL(/fragment\.html#target/)
 		// toHaveURL resolves as soon as the Navigation API commits the URL, which happens
-		// before swap()/doScroll() apply :target — so assert via the auto-retrying
+		// before swap()/scroll() apply :target — so assert via the auto-retrying
 		// toHaveCSS first, then the :target check.
 		await expect(page.locator('#target')).toHaveCSS('background-color', 'rgb(255, 255, 224)')
 		await expect(page.locator('#target:target')).toHaveCount(1)
@@ -144,7 +163,7 @@ test.describe('Fragments', () => {
 	})
 })
 
-test.describe('isSamePageHash', () => {
+test.describe('Same-Page Hash Navigation', () => {
 	// Note: URL#hash is blank for a trailing "/#", so these cases can't be
 	// told apart by hash alone - the check is same pathname + search, not
 	// the browser's own hashChange flag (which is false when the fragment
@@ -233,7 +252,7 @@ test.describe('Forms', () => {
 })
 
 test.describe('Fallback', () => {
-	test('data-hop="false" link loads new document', async ({ page }) => {
+	test('data-hop="false" link is not intercepted', async ({ page }) => {
 		await page.goto('/')
 		const docId = await markDocument(page)
 		await page.click('a[data-hop="false"]')
@@ -305,7 +324,7 @@ test.describe('Fallback', () => {
 		expect(pageErrors).toEqual([])
 	})
 
-	test('external link falls back to full browser navigation', async ({ page }) => {
+	test('external link is not intercepted', async ({ page }) => {
 		await page.goto('/')
 		const docId = await markDocument(page)
 		await page.click('a[href="http://localhost:3001/"]')
@@ -325,12 +344,33 @@ test.describe('Fallback', () => {
 		expect(pageErrors).toEqual([])
 	})
 
+	test('response with no Content-Type header triggers fallback', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.goto('/')
+		const docId = await markDocument(page)
+
+		await page.route('/fixtures/two.html', route => route.fulfill({
+			status: 200,
+			headers: {},
+			body: '<!DOCTYPE html><html><head><title>Two</title></head><body><h1>Two</h1></body></html>',
+		}))
+
+		await page.click('a[href="/fixtures/two.html"]')
+		await page.waitForURL(/fixtures\/two\.html/)
+		await expect(page).toHaveTitle('Two')
+		// Full page load - new document
+		expect(await getDocumentId(page)).not.toBe(docId)
+		expect(pageErrors).toEqual([])
+	})
+
 	// Accepted gap: a POST whose response isn't a redirect can't be resubmitted by
 	// a full-page navigation, so canFallback() is false here. hop:before-fallback
 	// still fires and the disabled check still throws, but with no fallback and no
-	// swap the navigation is just silently cancelled - the page stays exactly where
+	// swap the navigation is just silently canceled - the page stays exactly where
 	// it was, on the form page that submitted it.
-	test('POST to no-hop page is silently cancelled (no fallback, no swap)', async ({ page }) => {
+	test('POST to no-hop page is silently canceled (no fallback, no swap)', async ({ page }) => {
 		const pageErrors = []
 		page.on('pageerror', (err) => pageErrors.push(err))
 
@@ -338,22 +378,14 @@ test.describe('Fallback', () => {
 		const docId = await markDocument(page)
 		const url = page.url()
 
-		// The navigation is cancelled with no history entry and no frame load, so
+		// The navigation is canceled with no history entry and no frame load, so
 		// Playwright's navigation-aware waiting (click()'s default wait, and
 		// expect().toHaveTitle()'s polling) never settles here. Trigger the
-		// submit with a raw DOM click and bridge the resulting hop:before-fallback
-		// back to Node instead of relying on either.
-		let resolveDetail
-		const detail = new Promise((r) => (resolveDetail = r))
-		await page.exposeFunction('__reportFallback', (d) => resolveDetail(d))
-		await page.evaluate(() => {
-			document.addEventListener('hop:before-fallback', (e) => {
-				window.__reportFallback({ reason: e.detail.reason })
-			}, { once: true })
-		})
+		// submit with a raw DOM click instead of relying on either.
+		const { detail } = await watchFallback(page)
 
 		await page.evaluate(() => document.querySelector('input[type="submit"]').click())
-		expect(await detail).toEqual({ reason: 'disabled' })
+		expect(await detail).toEqual({ reason: 'disabled', hasHop: true, hasError: true })
 
 		expect(page.url()).toBe(url)
 		expect(await page.evaluate(() => document.title)).toBe('Form No Hop')
@@ -362,34 +394,15 @@ test.describe('Fallback', () => {
 	})
 })
 
-test.describe('hop:before-fallback', () => {
-	// The event fires just before a real full-page navigation, which would tear down
-	// a page.evaluate()-hosted Promise mid-flight. Bridge the detail back to Node via
-	// exposeFunction instead, so it survives that navigation.
-	async function watchFallback(page) {
-		let resolveDetail
-		const detail = new Promise((r) => (resolveDetail = r))
-		await page.exposeFunction('__reportFallback', (d) => resolveDetail(d))
-		await page.evaluate(() => {
-			document.addEventListener('hop:before-fallback', (e) => {
-				window.__reportFallback({
-					reason: e.detail.reason,
-					hasHop: !!e.detail.hop,
-					hasError: !!e.detail.error,
-				})
-			}, { once: true })
-		})
-		return { detail }
-	}
-
-	test('fires with reason "unsupported-media-type"', async ({ page }) => {
+test.describe('Fallback Events', () => {
+	test('hop:before-fallback fires with reason "unsupported-media-type"', async ({ page }) => {
 		await page.goto('/')
 		const { detail } = await watchFallback(page)
 		await page.click('a[href="/unsupported"]')
 		expect(await detail).toEqual({ reason: 'unsupported-media-type', hasHop: true, hasError: true })
 	})
 
-	test('fires with reason "attachment"', async ({ page }) => {
+	test('hop:before-fallback fires with reason "attachment"', async ({ page }) => {
 		await page.goto('/')
 		const { detail } = await watchFallback(page)
 		const downloadPromise = page.waitForEvent('download')
@@ -398,21 +411,21 @@ test.describe('hop:before-fallback', () => {
 		expect(await detail).toEqual({ reason: 'attachment', hasHop: true, hasError: true })
 	})
 
-	test('fires with reason "cross-origin-redirect"', async ({ page }) => {
+	test('hop:before-fallback fires with reason "cross-origin-redirect"', async ({ page }) => {
 		await page.goto('/')
 		const { detail } = await watchFallback(page)
 		await page.click('a[href="/redirect/cors"]')
 		expect(await detail).toEqual({ reason: 'cross-origin-redirect', hasHop: true, hasError: true })
 	})
 
-	test('fires with reason "disabled"', async ({ page }) => {
+	test('hop:before-fallback fires with reason "disabled"', async ({ page }) => {
 		await page.goto('/')
 		const { detail } = await watchFallback(page)
 		await page.click('a[href="/fixtures/no-hop.html"]')
 		expect(await detail).toEqual({ reason: 'disabled', hasHop: true, hasError: true })
 	})
 
-	test('cancelling it skips the fallback navigation', async ({ page }) => {
+	test('canceling hop:before-fallback skips the fallback navigation', async ({ page }) => {
 		const pageErrors = []
 		page.on('pageerror', (err) => pageErrors.push(err))
 
@@ -428,7 +441,7 @@ test.describe('hop:before-fallback', () => {
 
 		await page.click('a[href="/unsupported"]')
 		await page.waitForTimeout(500)
-		// The fallback was skipped because the event was cancelled - stay put
+		// The fallback was skipped because the event was canceled - stay put
 		expect(page.url()).toBe(url)
 		expect(await getDocumentId(page)).toBe(docId)
 		expect(pageErrors).toEqual([])
@@ -442,7 +455,7 @@ test.describe('hop:before-fallback', () => {
 	test('a POST with no fallback cancels the response body', async ({ page }) => {
 		await page.goto('/fixtures/form-unsupported.html')
 
-		// The navigation is cancelled, so no frame load ever settles. Wait on the
+		// The navigation is canceled, so no frame load ever settles. Wait on the
 		// hop:fetch-end event instead of Playwright's navigation-aware waiting.
 		const ended = page.evaluate(() => new Promise(resolve => {
 			document.addEventListener('hop:before-fallback', (e) => {
@@ -456,7 +469,7 @@ test.describe('hop:before-fallback', () => {
 		expect(await page.evaluate(() => window.__stashedResponse.bodyUsed)).toBe(true)
 	})
 
-	test('cancelling it inside an intercept keeps the response body readable', async ({ page }) => {
+	test('canceling hop:before-fallback inside an intercept keeps the response body readable', async ({ page }) => {
 		await page.goto('/')
 
 		let resolveText
@@ -475,7 +488,7 @@ test.describe('hop:before-fallback', () => {
 		expect(await text).toContain('This is a downloadable file.')
 	})
 
-	test('a hop superseded while parked does not hijack the newer navigation', async ({ page }) => {
+	test('a hop superseded while parked in hop:before-fallback does not hijack the newer navigation', async ({ page }) => {
 		const pageErrors = []
 		page.on('pageerror', (err) => pageErrors.push(err))
 
@@ -522,7 +535,7 @@ test.describe('Empty Responses', () => {
 			const docId = await markDocument(page)
 			const url = page.url()
 
-			// The navigation is cancelled, so no frame load ever settles. Wait on the
+			// The navigation is canceled, so no frame load ever settles. Wait on the
 			// hop:fetch-end event instead of Playwright's navigation-aware waiting.
 			const ended = page.evaluate(() => new Promise(resolve => {
 				document.addEventListener('hop:fetch-end', () => resolve(), { once: true })
@@ -539,7 +552,7 @@ test.describe('Empty Responses', () => {
 		})
 	}
 
-	test('204 fires before-response and fetch-end, but not fetch-load or fetch-error', async ({ page }) => {
+	test('204 fires hop:before-response and hop:fetch-end, but not hop:fetch-load or hop:fetch-error', async ({ page }) => {
 		const pageErrors = []
 		page.on('pageerror', (err) => pageErrors.push(err))
 
@@ -575,7 +588,7 @@ test.describe('Empty Responses', () => {
 		const docId = await markDocument(page)
 		const url = page.url()
 
-		// The navigation is cancelled, so no frame load ever settles. Wait on the
+		// The navigation is canceled, so no frame load ever settles. Wait on the
 		// hop:fetch-end event instead of Playwright's navigation-aware waiting.
 		const ended = page.evaluate(() => new Promise(resolve => {
 			document.addEventListener('hop:fetch-end', () => resolve(), { once: true })
@@ -721,13 +734,13 @@ test.describe('Scroll Behavior', () => {
 		await page.waitForFunction(() => scrollY < 10)
 		expect(await getDocumentId(page)).toBe(docId)
 		expect(await page.evaluate(() => scrollY)).toBe(0)
-		const entriesafter = await page.evaluate(() => navigation.entries().length)
-		expect(entriesafter).toBe(entriesBefore)
+		const entriesAfter = await page.evaluate(() => navigation.entries().length)
+		expect(entriesAfter).toBe(entriesBefore)
 	})
 })
 
 test.describe('Fetch Events', () => {
-	test('successful navigation fires before-fetch, fetch-start, fetch-load, and fetch-end on the source element', async ({ page }) => {
+	test('successful navigation fires hop:before-fetch, hop:fetch-start, hop:fetch-load and hop:fetch-end on the source element', async ({ page }) => {
 		await page.goto('/')
 		const events = page.evaluate(() => {
 			const link = document.querySelector('a[href="/fixtures/two.html"]')
@@ -764,7 +777,7 @@ test.describe('Fetch Events', () => {
 		expect(result[3].target).toBe('A')
 	})
 
-	test('before-fetch is interceptable and prevents navigation', async ({ page }) => {
+	test('canceling hop:before-fetch prevents the navigation', async ({ page }) => {
 		const pageErrors = []
 		page.on('pageerror', (err) => pageErrors.push(err))
 
@@ -779,7 +792,7 @@ test.describe('Fetch Events', () => {
 		})
 
 		await page.click('a[href="/fixtures/two.html"]')
-		// Should stay on the same page since before-fetch was cancelled
+		// Should stay on the same page since before-fetch was canceled
 		await page.waitForTimeout(500)
 		await expect(page).toHaveTitle('Test Hub')
 		expect(page.url()).toBe(url)
@@ -787,7 +800,7 @@ test.describe('Fetch Events', () => {
 		expect(pageErrors).toEqual([])
 	})
 
-	test('fetch-error fires on source element on network error', async ({ page }) => {
+	test('hop:fetch-error fires on the source element on a network error', async ({ page }) => {
 		const pageErrors = []
 		page.on('pageerror', (err) => pageErrors.push(err))
 
@@ -826,30 +839,10 @@ test.describe('Fetch Events', () => {
 		expect(pageErrors).toEqual([])
 	})
 
-	test('response with no Content-Type header falls back to full-page load', async ({ page }) => {
-		const pageErrors = []
-		page.on('pageerror', (err) => pageErrors.push(err))
-
-		await page.goto('/')
-		const docId = await markDocument(page)
-
-		await page.route('/fixtures/two.html', route => route.fulfill({
-			status: 200,
-			headers: {},
-			body: '<!DOCTYPE html><html><head><title>Two</title></head><body><h1>Two</h1></body></html>',
-		}))
-
-		await page.click('a[href="/fixtures/two.html"]')
-		await page.waitForURL(/fixtures\/two\.html/)
-		await expect(page).toHaveTitle('Two')
-		// Full page load - new document
-		expect(await getDocumentId(page)).not.toBe(docId)
-		expect(pageErrors).toEqual([])
-	})
 })
 
-test.describe('hop:before-response', () => {
-	test('fires on the source element with an unread response', async ({ page }) => {
+test.describe('Response Events', () => {
+	test('hop:before-response fires on the source element with an unread response', async ({ page }) => {
 		await page.goto('/')
 
 		const detail = page.evaluate(() => new Promise(resolve => {
@@ -876,7 +869,7 @@ test.describe('hop:before-response', () => {
 		expect(result.target).toBe('A')
 	})
 
-	test('cancelling it aborts the navigation with no swap and no fallback', async ({ page }) => {
+	test('canceling hop:before-response aborts the navigation with no swap and no fallback', async ({ page }) => {
 		const pageErrors = []
 		page.on('pageerror', (err) => pageErrors.push(err))
 
@@ -888,7 +881,7 @@ test.describe('hop:before-response', () => {
 			document.addEventListener('hop:before-response', (e) => e.preventDefault())
 		})
 
-		// The navigation is cancelled, so no frame load ever settles. Wait on the
+		// The navigation is canceled, so no frame load ever settles. Wait on the
 		// hop:fetch-end event instead of Playwright's navigation-aware waiting.
 		const ended = page.evaluate(() => new Promise(resolve => {
 			document.addEventListener('hop:fetch-end', () => resolve(), { once: true })
@@ -902,7 +895,7 @@ test.describe('hop:before-response', () => {
 		expect(pageErrors).toEqual([])
 	})
 
-	test('an intercept callback runs before the body is read', async ({ page }) => {
+	test('a hop:before-response intercept callback runs before the body is read', async ({ page }) => {
 		await page.goto('/')
 
 		await page.evaluate(() => {
@@ -922,7 +915,7 @@ test.describe('hop:before-response', () => {
 		expect(await page.evaluate(() => window.__order)).toEqual(['intercept', 'fetch-load'])
 	})
 
-	test('preventDefault inside the intercept callback cancels after the async work', async ({ page }) => {
+	test('preventDefault inside a hop:before-response intercept callback cancels after the async work', async ({ page }) => {
 		const pageErrors = []
 		page.on('pageerror', (err) => pageErrors.push(err))
 
@@ -970,7 +963,7 @@ test.describe('hop:before-response', () => {
 		return order
 	}
 
-	test('fires before grasshopper checks the response, ahead of hop:before-fallback', async ({ page }) => {
+	test('hop:before-response fires before grasshopper checks the response, ahead of hop:before-fallback', async ({ page }) => {
 		const order = await watchOrder(page, ['before-response', 'before-fallback'])
 		await page.goto('/')
 
@@ -982,7 +975,7 @@ test.describe('hop:before-response', () => {
 		await expect.poll(() => order).toEqual(['before-response', 'before-fallback'])
 	})
 
-	test('fires for a destination page that has disabled grasshopper', async ({ page }) => {
+	test('hop:before-response fires for a destination page that has disabled grasshopper', async ({ page }) => {
 		const order = await watchOrder(page, ['before-response', 'before-fallback'])
 		await page.goto('/')
 
@@ -994,7 +987,7 @@ test.describe('hop:before-response', () => {
 		await expect.poll(() => order).toEqual(['before-response', 'before-fallback'])
 	})
 
-	test('cancelling it for an unsupported media type skips the fallback navigation', async ({ page }) => {
+	test('canceling hop:before-response for an unsupported media type skips the fallback navigation', async ({ page }) => {
 		const pageErrors = []
 		page.on('pageerror', (err) => pageErrors.push(err))
 
@@ -1011,7 +1004,7 @@ test.describe('hop:before-response', () => {
 		await page.click('a[href="/unsupported"]')
 		await page.waitForTimeout(500)
 
-		// Cancelling first means the media-type check never runs, so there is no
+		// Canceling first means the media-type check never runs, so there is no
 		// fallback to the raw JSON
 		expect(await page.evaluate(() => window.__fellBack)).toBe(false)
 		await expect(page).toHaveTitle('Test Hub')
@@ -1020,7 +1013,7 @@ test.describe('hop:before-response', () => {
 		expect(pageErrors).toEqual([])
 	})
 
-	test('a navigation superseded while parked in an intercept does not fall back or stop grasshopper', async ({ page }) => {
+	test('a hop superseded while parked in hop:before-response does not fall back or stop grasshopper', async ({ page }) => {
 		const pageErrors = []
 		page.on('pageerror', (err) => pageErrors.push(err))
 
@@ -1064,7 +1057,7 @@ test.describe('hop:before-response', () => {
 })
 
 test.describe('Intercept Events', () => {
-	test('before-intercept fires with hop detail', async ({ page }) => {
+	test('hop:before-intercept fires with hop detail', async ({ page }) => {
 		await page.goto('/')
 		const detail = page.evaluate(() => {
 			return new Promise(resolve => {
@@ -1089,7 +1082,7 @@ test.describe('Intercept Events', () => {
 		expect(result.hasSourceElement).toBe(true)
 	})
 
-	test('canceling before-intercept falls back to standard navigation', async ({ page }) => {
+	test('canceling hop:before-intercept skips interception', async ({ page }) => {
 		await page.goto('/')
 		const docId = await markDocument(page)
 
@@ -1106,8 +1099,8 @@ test.describe('Intercept Events', () => {
 	})
 })
 
-test.describe('hop:before-transition', () => {
-	test('cancelling skips the view transition but still swaps', async ({ page }) => {
+test.describe('Transition Events', () => {
+	test('canceling hop:before-transition skips the view transition but still swaps', async ({ page }) => {
 		const pageErrors = []
 		page.on('pageerror', (err) => pageErrors.push(err))
 
@@ -1135,13 +1128,14 @@ test.describe('hop:before-transition', () => {
 		expect(pageErrors).toEqual([])
 	})
 
-	// Cancelling hop:before-transition does not abort the hop - it only skips
+	// Canceling hop:before-transition does not abort the hop - it only skips
 	// the animation and falls through to the plain swap. So a hop that gets
 	// superseded while parked in a before-transition intercept must be
-	// stopped by checkpoint()'s signal recheck, not by the cancellation
-	// itself. If that recheck were removed, the superseded hop would still
-	// swap its stale document in after the newer hop has already taken over.
-	test('a hop superseded while parked does not swap when cancelled', async ({ page }) => {
+	// stopped by the signal check in sendInterceptable(), not by the
+	// cancellation itself. If that check were removed, the superseded hop
+	// would still swap its stale document in after the newer hop has already
+	// taken over.
+	test('a hop superseded while parked in hop:before-transition does not swap when canceled', async ({ page }) => {
 		const pageErrors = []
 		page.on('pageerror', (err) => pageErrors.push(err))
 
@@ -1177,12 +1171,62 @@ test.describe('hop:before-transition', () => {
 		expect(page.url()).toContain('/fixtures/persist.html')
 		expect(pageErrors).toEqual([])
 	})
+
+	test('hop:after-transition fires after the view transition finishes', async ({ page }) => {
+		await page.goto('/')
+
+		const eventFired = page.evaluate(() => {
+			return new Promise(resolve => {
+				document.addEventListener('hop:after-transition', (e) => {
+					resolve({ hasHop: !!e.detail.hop })
+				}, { once: true })
+			})
+		})
+
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+
+		const result = await eventFired
+		expect(result.hasHop).toBe(true)
+	})
+
+	test('hop:after-transition does not fire when the swap aborts', async ({ page }) => {
+		const pageErrors = []
+		page.on('pageerror', (err) => pageErrors.push(err))
+
+		await page.addInitScript(() => {
+			window.__events = []
+			// Deliberately does NOT force the path without a view transition:
+			// the bug this covers only reproduces via a real
+			// document.startViewTransition(). On the path without a view
+			// transition, handler() throws before finished is ever attached
+			// to, so the fix would be unreachable and this test would pass
+			// vacuously either way.
+			document.addEventListener('hop:before-swap', (e) => {
+				window.__events.push('before-swap')
+				e.detail.hop.abort()
+			})
+			document.addEventListener('hop:after-transition', () => {
+				window.__events.push('after-transition')
+			})
+		})
+
+		await page.goto('/')
+		await page.click('a[href="/fixtures/two.html"]')
+		await page.waitForTimeout(500)
+
+		const events = await page.evaluate(() => window.__events)
+		// Positive control: the navigation reached before-swap, so this
+		// assertion can't pass simply because nothing happened at all
+		expect(events).toContain('before-swap')
+		expect(events).not.toContain('after-transition')
+		expect(pageErrors).toEqual([])
+	})
 })
 
 test.describe('Swap Events', () => {
-	test('before-swap fires before swap and is cancelable', async ({ page }) => {
+	test('hop:before-swap and hop:after-swap fire around the swap', async ({ page }) => {
 		await page.goto('/')
-		const docId = await markDocument(page)
 
 		const events = page.evaluate(() => {
 			const events = []
@@ -1216,7 +1260,7 @@ test.describe('Swap Events', () => {
 		expect(result[1].titleAfterSwap).toBe('Two')
 	})
 
-	test('canceling before-swap prevents the swap', async ({ page }) => {
+	test('canceling hop:before-swap prevents the swap', async ({ page }) => {
 		await page.goto('/')
 		const docId = await markDocument(page)
 
@@ -1234,12 +1278,12 @@ test.describe('Swap Events', () => {
 		// Swap was prevented so title stays
 		await expect(page).toHaveTitle('Test Hub')
 		expect(await getDocumentId(page)).toBe(docId)
-		// A cancelled before-swap does not throw -- swap() returns early --
+		// A canceled before-swap does not throw -- swap() returns early --
 		// so the update callback still resolves and hop:load must still fire
 		expect(await loaded).toBe(true)
 	})
 
-	test('a listener parked forever in before-swap does not block a later navigation', async ({ page }) => {
+	test('a listener parked forever in hop:before-swap does not block a later navigation', async ({ page }) => {
 		const pageErrors = []
 		page.on('pageerror', (err) => pageErrors.push(err))
 
@@ -1271,7 +1315,7 @@ test.describe('Swap Events', () => {
 		expect(pageErrors).toEqual([])
 	})
 
-	test('calling preventDefault inside intercept callback prevents the swap', async ({ page }) => {
+	test('preventDefault inside a hop:before-swap intercept callback prevents the swap', async ({ page }) => {
 		await page.goto('/')
 		const docId = await markDocument(page)
 
@@ -1292,7 +1336,7 @@ test.describe('Swap Events', () => {
 		expect(await getDocumentId(page)).toBe(docId)
 	})
 
-	test('sendInterceptable waits for every intercept callback, not just the last one', async ({ page }) => {
+	test('hop:before-swap waits for every intercept callback, not just the last one', async ({ page }) => {
 		await page.goto('/')
 		const docId = await markDocument(page)
 
@@ -1349,7 +1393,7 @@ test.describe('Swap Events', () => {
 		})
 
 		await page.click('a[href="/fixtures/two.html"]')
-		// Both callbacks ran to completion, even though the first one cancelled
+		// Both callbacks ran to completion, even though the first one canceled
 		expect(await calls).toEqual(['a', 'b'])
 
 		// The cancel still prevented the swap
@@ -1358,11 +1402,11 @@ test.describe('Swap Events', () => {
 		expect(await getDocumentId(page)).toBe(docId)
 	})
 
-	// Kept behaviour, not extended by this change: a synchronous preventDefault
+	// Kept behavior, not extended by this change: a synchronous preventDefault
 	// makes dispatchEvent() return false, so sendInterceptable returns before it
 	// runs any callback at all - unlike a preventDefault from inside a callback,
 	// which still waits for every other callback (see above).
-	test('a synchronous preventDefault on before-swap skips every intercept callback', async ({ page }) => {
+	test('a synchronous preventDefault on hop:before-swap skips every intercept callback', async ({ page }) => {
 		await page.goto('/')
 		const docId = await markDocument(page)
 
@@ -1382,69 +1426,19 @@ test.describe('Swap Events', () => {
 		expect(await getDocumentId(page)).toBe(docId)
 	})
 
-	test('after-transition fires after view transition finishes', async ({ page }) => {
-		await page.goto('/')
-
-		const eventFired = page.evaluate(() => {
-			return new Promise(resolve => {
-				document.addEventListener('hop:after-transition', (e) => {
-					resolve({ hasHop: !!e.detail.hop })
-				}, { once: true })
-			})
-		})
-
-		await page.click('a[href="/fixtures/two.html"]')
-		await expect(page).toHaveTitle('Two')
-
-		const result = await eventFired
-		expect(result.hasHop).toBe(true)
-	})
-
-	test('after-transition does not fire when the swap aborts', async ({ page }) => {
-		const pageErrors = []
-		page.on('pageerror', (err) => pageErrors.push(err))
-
-		await page.addInitScript(() => {
-			window.__events = []
-			// Deliberately does NOT force the null-transition path: the bug this
-			// covers only reproduces via a real document.startViewTransition().
-			// On the null-transition path handler() throws before finished is
-			// ever attached to, so the fix would be unreachable and this test
-			// would pass vacuously either way.
-			document.addEventListener('hop:before-swap', (e) => {
-				window.__events.push('before-swap')
-				e.detail.hop.abort()
-			})
-			document.addEventListener('hop:after-transition', () => {
-				window.__events.push('after-transition')
-			})
-		})
-
-		await page.goto('/')
-		await page.click('a[href="/fixtures/two.html"]')
-		await page.waitForTimeout(500)
-
-		const events = await page.evaluate(() => window.__events)
-		// Positive control: the navigation reached before-swap, so this
-		// assertion can't pass simply because nothing happened at all
-		expect(events).toContain('before-swap')
-		expect(events).not.toContain('after-transition')
-		expect(pageErrors).toEqual([])
-	})
-
-	test('a hop superseded while parked in before-swap does not swap', async ({ page }) => {
+	test('a hop superseded while parked in hop:before-swap does not swap', async ({ page }) => {
 		const pageErrors = []
 		page.on('pageerror', (err) => pageErrors.push(err))
 
 		await page.addInitScript(() => {
 			window.__swaps = []
-			// Force the nullTransition path: a real, still-active
+			// Force the path without a view transition: a real, still-active
 			// document.startViewTransition() would have its own ready/
 			// updateCallbackDone/finished promises rejected by the browser
-			// once checkpoint() throws inside the update callback, which
-			// surfaces as unrelated unhandled rejections. That's a browser
-			// view-transition wrinkle, not what this test is about, so it's
-			// sidestepped here to isolate the before-swap guard itself.
+			// once sendInterceptable() throws inside the update callback,
+			// which surfaces as unrelated unhandled rejections. That's a
+			// browser view-transition wrinkle, not what this test is about,
+			// so it's sidestepped here to isolate the before-swap guard itself.
 			document.addEventListener('hop:before-transition', (e) => {
 				e.preventDefault()
 			})
@@ -1482,11 +1476,10 @@ test.describe('Swap Events', () => {
 		await expect(page).toHaveTitle('Persistence')
 		expect(pageErrors).toEqual([])
 	})
-
 })
 
 test.describe('Scroll Events', () => {
-	test('before-scroll fires with hop detail', async ({ page }) => {
+	test('hop:before-scroll fires with hop detail', async ({ page }) => {
 		await page.goto('/')
 
 		const detail = page.evaluate(() => {
@@ -1514,7 +1507,7 @@ test.describe('Scroll Events', () => {
 		expect(result.fromUrl).toContain('/')
 	})
 
-	test('after-scroll fires with hop detail', async ({ page }) => {
+	test('hop:after-scroll fires with hop detail', async ({ page }) => {
 		await page.goto('/')
 
 		const detail = page.evaluate(() => {
@@ -1542,7 +1535,7 @@ test.describe('Scroll Events', () => {
 		expect(result.fromUrl).toContain('/')
 	})
 
-	test('before-scroll is interceptable', async ({ page }) => {
+	test('hop:before-scroll is interceptable', async ({ page }) => {
 		await page.goto('/')
 
 		const result = page.evaluate(() => {
@@ -1563,7 +1556,7 @@ test.describe('Scroll Events', () => {
 		expect(hasHop).toBe(true)
 	})
 
-	test('canceling before-scroll prevents scrolling and after-scroll event', async ({ page }) => {
+	test('canceling hop:before-scroll prevents scrolling and hop:after-scroll', async ({ page }) => {
 		await page.goto('/')
 
 		const result = page.evaluate(() => {
@@ -1628,30 +1621,6 @@ test.describe('Lifecycle Event Order', () => {
 			'load'
 		])
 	})
-
-	test('hop:load fires with hop detail', async ({ page }) => {
-		await page.goto('/')
-
-		const detail = page.evaluate(() => {
-			return new Promise(resolve => {
-				document.addEventListener('hop:load', (e) => {
-					resolve({
-						hasHop: !!e.detail.hop,
-						method: e.detail.hop.method,
-						url: e.detail.hop.to.href
-					})
-				}, { once: true })
-			})
-		})
-
-		await page.click('a[href="/fixtures/two.html"]')
-		await expect(page).toHaveTitle('Two')
-
-		const result = await detail
-		expect(result.hasHop).toBe(true)
-		expect(result.method).toBe('GET')
-		expect(result.url).toContain('/fixtures/two.html')
-	})
 })
 
 test.describe('Nonce Attributes', () => {
@@ -1670,7 +1639,7 @@ test.describe('Nonce Attributes', () => {
 	})
 })
 
-test.describe('runScripts', () => {
+test.describe('Script Execution', () => {
 	test('new scripts execute after swap', async ({ page }) => {
 		await page.goto('/fixtures/scripts-source.html')
 		await page.click('a[href="/fixtures/scripts-target.html"]')
@@ -1753,9 +1722,9 @@ test.describe('runScripts', () => {
 	// work (running scripts) is reported nowhere else, and must not be
 	// swallowed too -- otherwise a page whose scripts silently failed to run
 	// looks fine.
-	test('a failure surfaces rather than being swallowed', async ({ page }) => {
+	test('a runScripts() failure surfaces rather than being swallowed', async ({ page }) => {
 		const pageErrors = []
-		page.on('pageerror', (err) => pageErrors.push(err.message))
+		page.on('pageerror', (err) => pageErrors.push(err))
 
 		await page.addInitScript(() => {
 			// runScripts() calls this when the new document has an inline module
@@ -1772,7 +1741,7 @@ test.describe('runScripts', () => {
 		await page.waitForTimeout(1200)
 
 		await expect(page).toHaveTitle('Lone Module Target')
-		expect(pageErrors).toContain('boom from runScripts')
+		expect(pageErrors.map((err) => err.message)).toContain('boom from runScripts')
 	})
 })
 
@@ -1924,7 +1893,7 @@ test.describe('Shadow DOM', () => {
 	})
 })
 
-test.describe('Slow responses', () => {
+test.describe('Slow Responses', () => {
 	test('slow response keeps same document', async ({ page }) => {
 		await page.goto('/')
 		const docId = await markDocument(page)
@@ -2042,7 +2011,7 @@ test.describe('Timeout', () => {
 		expect(pageErrors).toEqual([])
 	})
 
-	test('hop.abort with a custom reason does not fire hop:fetch-error', async ({ page }) => {
+	test('hop.abort() with a custom reason does not fire hop:fetch-error', async ({ page }) => {
 		const pageErrors = []
 		page.on('pageerror', (err) => pageErrors.push(err))
 
@@ -2078,7 +2047,7 @@ test.describe('Timeout', () => {
 	})
 })
 
-test.describe('Stylesheet preloading', () => {
+test.describe('Stylesheet Preloading', () => {
 	test('a stalled preload stops waiting when the navigation is superseded', async ({ page }) => {
 		const pageErrors = []
 		page.on('pageerror', (err) => pageErrors.push(err))
@@ -2123,7 +2092,7 @@ test.describe('Stylesheet preloading', () => {
 	})
 })
 
-test.describe('Superseded navigations', () => {
+test.describe('Superseded Hops', () => {
 	test('hop:load does not fire for a hop whose transition is no longer current', async ({ page }) => {
 		const pageErrors = []
 		page.on('pageerror', (err) => pageErrors.push(err))
@@ -2209,7 +2178,7 @@ test.describe('Superseded navigations', () => {
 		// nav2 wakes and throws at throwIfAborted before the reload check.
 		// nav3 targets track.html, the same tracked stylesheet as the live
 		// document, so nav3 itself never trips trackedElementsChanged --
-		// isolating nav2's behaviour as the only possible cause of a reload.
+		// isolating nav2's behavior as the only possible cause of a reload.
 		await page.evaluate(() => {
 			const r2 = navigation.navigate('/fixtures/track-changed.html')
 			r2.committed.catch(() => {})
@@ -2232,8 +2201,32 @@ test.describe('Superseded navigations', () => {
 	})
 })
 
-test.describe('hop:load', () => {
-	test('fires when the view transition is skipped', async ({ page }) => {
+test.describe('Load Events', () => {
+	test('hop:load fires with hop detail', async ({ page }) => {
+		await page.goto('/')
+
+		const detail = page.evaluate(() => {
+			return new Promise(resolve => {
+				document.addEventListener('hop:load', (e) => {
+					resolve({
+						hasHop: !!e.detail.hop,
+						method: e.detail.hop.method,
+						url: e.detail.hop.to.href
+					})
+				}, { once: true })
+			})
+		})
+
+		await page.click('a[href="/fixtures/two.html"]')
+		await expect(page).toHaveTitle('Two')
+
+		const result = await detail
+		expect(result.hasHop).toBe(true)
+		expect(result.method).toBe('GET')
+		expect(result.url).toContain('/fixtures/two.html')
+	})
+
+	test('hop:load fires when the view transition is skipped', async ({ page }) => {
 		const pageErrors = []
 		page.on('pageerror', (err) => pageErrors.push(err))
 
@@ -2257,7 +2250,7 @@ test.describe('hop:load', () => {
 		expect(pageErrors).toEqual([])
 	})
 
-	test('fires when scripts outlive the transition', async ({ page }) => {
+	test('hop:load fires when scripts outlive the transition', async ({ page }) => {
 		const pageErrors = []
 		page.on('pageerror', (err) => pageErrors.push(err))
 
@@ -2288,7 +2281,7 @@ test.describe('hop:load', () => {
 		expect(pageErrors).toEqual([])
 	})
 
-	test('still fires when an ignored navigation happens first', async ({ page }) => {
+	test('hop:load still fires when an ignored navigation happens first', async ({ page }) => {
 		const pageErrors = []
 		page.on('pageerror', (err) => pageErrors.push(err))
 
@@ -2331,11 +2324,11 @@ test.describe('hop:load', () => {
 	})
 
 	for (const precommit of [true, false]) {
-		test(`still fires when a newer hop is cancelled before it swaps${precommit ? '' : ' (non-precommit)'}`, async ({ page }) => {
+		test(`hop:load still fires when a newer hop is canceled before it swaps${precommit ? '' : ' (non-precommit)'}`, async ({ page }) => {
 			const pageErrors = []
 			page.on('pageerror', (err) => pageErrors.push(err))
 
-			if (!precommit) await noPrecommit(page)
+			if (!precommit) await forceNoPrecommit(page)
 			await page.route('**/fixtures/scripts-external.js', async (route) => {
 				await new Promise((r) => setTimeout(r, 1500))
 				await route.continue()
@@ -2346,7 +2339,7 @@ test.describe('hop:load', () => {
 				document.addEventListener('hop:load', (e) => {
 					window.__loads.push(e.detail.hop.to.pathname)
 				})
-				// the newer hop is accepted, then cancelled before it swaps
+				// the newer hop is accepted, then canceled before it swaps
 				document.addEventListener('hop:before-fetch', (e) => {
 					if (e.detail.hop.to.pathname === '/fixtures/two.html') e.preventDefault()
 				})
@@ -2377,17 +2370,18 @@ test.describe('hop:load', () => {
 		})
 	}
 
-	test('does not fire when a before-swap intercept aborts the hop', async ({ page }) => {
+	test('hop:load does not fire when a hop:before-swap intercept aborts the hop', async ({ page }) => {
 		const pageErrors = []
 		page.on('pageerror', (err) => pageErrors.push(err))
 
 		await page.addInitScript(() => {
 			window.__events = []
-			// Deliberately does NOT force the null-transition path: the bug this
-			// covers only reproduces via a real document.startViewTransition().
-			// On the null-transition path handler() throws before it ever
-			// attaches the updateCallbackDone handler, so the fix would be
-			// unreachable and this test would pass vacuously either way.
+			// Deliberately does NOT force the path without a view transition:
+			// the bug this covers only reproduces via a real
+			// document.startViewTransition(). On the path without a view
+			// transition, handler() throws before it ever attaches the
+			// updateCallbackDone handler, so the fix would be unreachable and
+			// this test would pass vacuously either way.
 			document.addEventListener('hop:before-swap', (e) => {
 				window.__events.push('before-swap')
 				e.intercept(() => { e.detail.hop.abort() })
@@ -2410,8 +2404,8 @@ test.describe('hop:load', () => {
 	})
 })
 
-test.describe('Re-entrant navigation', () => {
-	test('hop.abort() in before-intercept cancels rather than navigating', async ({ page }) => {
+test.describe('Re-entrant Navigation', () => {
+	test('hop.abort() in hop:before-intercept cancels rather than navigating', async ({ page }) => {
 		const pageErrors = []
 		page.on('pageerror', (err) => pageErrors.push(err))
 
@@ -2433,13 +2427,13 @@ test.describe('Re-entrant navigation', () => {
 		expect(pageErrors).toEqual([])
 	})
 
-	test('a navigation started from fetch-end is not overridden', async ({ page }) => {
+	test('a navigation started from hop:fetch-end is not overridden', async ({ page }) => {
 		const pageErrors = []
 		page.on('pageerror', (err) => pageErrors.push(err))
 
 		// the re-issue only happens on the non-precommit path, where
 		// precommitHandler calls navigation.navigate() itself
-		await noPrecommit(page)
+		await forceNoPrecommit(page)
 		await page.addInitScript(() => {
 			// fetch-end dispatches synchronously from loadDoc's finally, so the
 			// outer hop can still re-issue its stale destination afterwards
@@ -2554,7 +2548,7 @@ test.describe('Navigation ID', () => {
 
 test.describe('Navigation Direction', () => {
 	// Awaited before the triggering action, so listener attachment can't race past it.
-	function armDirection(page) {
+	function watchDirection(page) {
 		return page.evaluate(() => {
 			window.__hopDirection = new Promise(resolve => {
 				document.addEventListener('hop:before-intercept', (e) => {
@@ -2569,7 +2563,7 @@ test.describe('Navigation Direction', () => {
 
 	test('push navigation has forward direction', async ({ page }) => {
 		await page.goto('/')
-		await armDirection(page)
+		await watchDirection(page)
 		await page.click('a[href="/fixtures/two.html"]')
 		await expect(page).toHaveTitle('Two')
 		expect(await readDirection(page)).toBe('forward')
@@ -2577,7 +2571,7 @@ test.describe('Navigation Direction', () => {
 
 	test('replace navigation has none direction', async ({ page }) => {
 		await page.goto('/')
-		await armDirection(page)
+		await watchDirection(page)
 		await page.click('a[href="/fixtures/two.html"][data-hop-type="replace"]')
 		await expect(page).toHaveTitle('Two')
 		expect(await readDirection(page)).toBe('none')
@@ -2585,7 +2579,7 @@ test.describe('Navigation Direction', () => {
 
 	test('replace to self has none direction', async ({ page }) => {
 		await page.goto('/')
-		await armDirection(page)
+		await watchDirection(page)
 		await page.click('a[href="/"][data-hop-type="replace"]')
 		await expect(page).toHaveTitle('Test Hub')
 		expect(await readDirection(page)).toBe('none')
@@ -2596,7 +2590,7 @@ test.describe('Navigation Direction', () => {
 		await page.click('a[href="/fixtures/two.html"]')
 		await expect(page).toHaveTitle('Two')
 
-		await armDirection(page)
+		await watchDirection(page)
 		await page.goBack()
 		await expect(page).toHaveTitle('Test Hub')
 		expect(await readDirection(page)).toBe('back')
@@ -2609,7 +2603,7 @@ test.describe('Navigation Direction', () => {
 		await page.goBack()
 		await expect(page).toHaveTitle('Test Hub')
 
-		await armDirection(page)
+		await watchDirection(page)
 		await page.goForward()
 		await expect(page).toHaveTitle('Two')
 		expect(await readDirection(page)).toBe('forward')
@@ -2756,15 +2750,15 @@ test.describe('Traversal Without History-Action Activation', () => {
 	})
 })
 
-test.describe('Non-precommit navigation', () => {
+test.describe('Non-precommit Navigation', () => {
 	test('a traversal during an in-flight push is not aborted by it', async ({ page }) => {
 		const pageErrors = []
 		page.on('pageerror', (err) => pageErrors.push(err))
 
-		await noPrecommit(page)
+		await forceNoPrecommit(page)
 		await page.addInitScript(() => {
 			window.__beforeFetch = []
-			window.__afterSwap = []
+			window.__swaps = []
 			document.addEventListener('hop:before-fetch', (e) => {
 				window.__beforeFetch.push({
 					type: e.detail.hop.navEvent.navigationType,
@@ -2772,7 +2766,7 @@ test.describe('Non-precommit navigation', () => {
 				})
 			})
 			document.addEventListener('hop:after-swap', (e) => {
-				window.__afterSwap.push(e.detail.hop.to.pathname)
+				window.__swaps.push(e.detail.hop.to.pathname)
 			})
 		})
 
@@ -2800,11 +2794,11 @@ test.describe('Non-precommit navigation', () => {
 		await page.waitForTimeout(1500)
 
 		const beforeFetch = await page.evaluate(() => window.__beforeFetch)
-		const afterSwap = await page.evaluate(() => window.__afterSwap)
+		const swaps = await page.evaluate(() => window.__swaps)
 
 		const traversalFetch = beforeFetch.find((e) => e.type === 'traverse')
 		expect(traversalFetch?.aborted).toBe(false)
-		expect(afterSwap).toContain('/')
+		expect(swaps).toContain('/')
 		await expect(page).toHaveTitle('Test Hub')
 		expect(new URL(page.url()).pathname).toBe('/')
 		expect(pageErrors).toEqual([])
@@ -2814,11 +2808,11 @@ test.describe('Non-precommit navigation', () => {
 		const pageErrors = []
 		page.on('pageerror', (err) => pageErrors.push(err))
 
-		await noPrecommit(page)
+		await forceNoPrecommit(page)
 		await page.addInitScript(() => {
-			window.__afterSwap = []
+			window.__swaps = []
 			document.addEventListener('hop:after-swap', (e) => {
-				window.__afterSwap.push(e.detail.hop.to.pathname)
+				window.__swaps.push(e.detail.hop.to.pathname)
 			})
 		})
 
@@ -2836,18 +2830,18 @@ test.describe('Non-precommit navigation', () => {
 		await page.click('a[href="#local-fragment"]')
 		await page.waitForTimeout(4000) // well past the 3s /slow route
 
-		expect(await page.evaluate(() => window.__afterSwap)).not.toContain('/slow')
+		expect(await page.evaluate(() => window.__swaps)).not.toContain('/slow')
 		await expect(page).toHaveTitle('Test Hub')
 		expect(new URL(page.url()).hash).toBe('#local-fragment')
 		expect(await getDocumentId(page)).toBe(docId)
 		expect(pageErrors).toEqual([])
 	})
 
-	test('hop.signal captured at before-intercept stays the same object and never aborts', async ({ page }) => {
+	test('hop.signal captured at hop:before-intercept stays the same object and never aborts', async ({ page }) => {
 		const pageErrors = []
 		page.on('pageerror', (err) => pageErrors.push(err))
 
-		await noPrecommit(page)
+		await forceNoPrecommit(page)
 		await page.addInitScript(() => {
 			window.__sameSignal = null
 			// once: before-intercept fires again for the re-issued navigation on
@@ -2876,7 +2870,7 @@ test.describe('Non-precommit navigation', () => {
 })
 
 test.describe('Start/Stop', () => {
-	test('stop() prevents interception; link falls back to full navigation', async ({ page }) => {
+	test('a link is not intercepted after stop()', async ({ page }) => {
 		await page.goto('/')
 		const docId = await markDocument(page)
 
