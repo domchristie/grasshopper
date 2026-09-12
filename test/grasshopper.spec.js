@@ -1244,8 +1244,9 @@ test.describe('Transition Events', () => {
 		})
 
 		await page.goto('/')
+		const settled = waitForSettle(page)
 		await page.click('a[href="/fixtures/two.html"]')
-		await page.waitForTimeout(500)
+		expect(await settled).toBe('error')
 
 		const events = await page.evaluate(() => window.__events)
 		// Positive control: the navigation reached before-swap, so this
@@ -2042,6 +2043,7 @@ test.describe('Timeout', () => {
 			})
 		})
 
+		await page.clock.install()
 		await page.goto('/')
 		const docId = await markDocument(page)
 
@@ -2049,9 +2051,10 @@ test.describe('Timeout', () => {
 		await expect(page).toHaveTitle('Two')
 		expect(await getDocumentId(page)).toBe(docId)
 
-		// Well past the 400ms timeout, to prove the timer was cleared and not
-		// left running against hop.signal
-		await page.waitForTimeout(1200)
+		// Move the fake clock well past the 400ms timeout and run any timer
+		// that is still pending, to prove the timer was cleared and not left
+		// running against hop.signal
+		await page.clock.runFor(1000)
 
 		await expect(page).toHaveTitle('Two')
 		expect(await getDocumentId(page)).toBe(docId)
@@ -2446,8 +2449,9 @@ test.describe('Load Events', () => {
 		})
 
 		await page.goto('/')
+		const settled = waitForSettle(page)
 		await page.click('a[href="/fixtures/two.html"]')
-		await page.waitForTimeout(500)
+		expect(await settled).toBe('error')
 
 		const events = await page.evaluate(() => window.__events)
 		// Positive control: the navigation reached before-swap, so this
