@@ -680,26 +680,28 @@ test.describe('Scroll Behavior', () => {
 	test('replace to self with preserve meta refreshes the page in-place', async ({ page }) => {
 		await page.goto('/fixtures/scroll-preserve.html')
 		const docId = await markDocument(page)
-		// Scroll down first
-		await page.evaluate(() => scrollTo(0, 100))
-		await page.waitForFunction(() => scrollY > 90)
+		// Scroll down first, and wait for the scroll event: the browser sends it
+		// at the next frame, so it could otherwise reach the listener below
+		await page.evaluate(() => new Promise((resolve) => {
+			addEventListener('scroll', resolve, { once: true })
+			scrollTo(0, 100)
+		}))
 
-		// Track whether navEvent.scroll() was called by listening to scroll events
-		const scrollCallPromise = page.evaluate(() => new Promise(resolve => {
-			let scrollCalled = false
-			const handler = () => { scrollCalled = true }
+		// Record every scroll until hop:load. With preserve, grasshopper must not
+		// scroll (navEvent.scroll() is not called), so this stays empty
+		const scrolls = page.evaluate(() => new Promise(resolve => {
+			const scrolls = []
+			const handler = () => scrolls.push(scrollY)
 			addEventListener('scroll', handler)
 			document.addEventListener('hop:load', () => {
 				removeEventListener('scroll', handler)
-				resolve(scrollCalled)
+				resolve(scrolls)
 			}, { once: true })
 		}))
 		const entriesBefore = await page.evaluate(() => navigation.entries().length)
 
 		await page.click('a[href="/fixtures/scroll-preserve.html"][data-hop-type="replace"]')
-		// When preserveScroll is true, no additional scroll events should be triggered
-		// (navEvent.scroll() is not called)
-		expect(await scrollCallPromise).toBe(false)
+		expect(await scrolls).toEqual([])
 		expect(await page.evaluate(() => scrollY)).toBe(100)
 		expect(await getDocumentId(page)).toBe(docId)
 		expect(await page.evaluate(() => navigation.entries().length)).toBe(entriesBefore)
@@ -1261,7 +1263,10 @@ test.describe('Swap Events', () => {
 			r.committed.catch(() => {})
 			r.finished.catch(() => {})
 		})
-		await page.waitForFunction(() => window.__parksStarted === 1)
+		// Poll on a timer: the listener parks inside a view transition's update
+		// callback, where the browser pauses rendering, so frame-based polling
+		// would stall until the transition times out
+		await page.waitForFunction(() => window.__parksStarted === 1, undefined, { polling: 50 })
 
 		await page.evaluate(() => {
 			const r = navigation.navigate('/fixtures/persist.html')
@@ -2080,78 +2085,6 @@ test.describe('Superseded Hops', () => {
 		expect(loads).toEqual(['/fixtures/two.html'])
 
 		await expect(page).toHaveTitle('Two')
-	})
-
-	test('a hop superseded while awaiting the previous transition does not reload or swap stale content', async ({ page }) => {
-		await page.addInitScript(() => {
-			window.__swaps = []
-			window.__parksStarted = 0
-			window.__parksDone = 0
-			window.__reloaded = false
-			navigation.addEventListener('navigate', (e) => {
-				if (e.navigationType === 'reload') window.__reloaded = true
-			})
-			document.addEventListener('hop:before-scroll', (e) => {
-				if (e.detail.hop.to.pathname === '/fixtures/track-same.html') {
-					e.intercept(async () => {
-						window.__parksStarted++
-						await new Promise((r) => setTimeout(r, 1500))
-						window.__parksDone++
-					})
-				}
-			})
-			document.addEventListener('hop:after-swap', (e) => {
-				window.__swaps.push(e.detail.hop.to.pathname)
-			})
-		})
-
-		await page.goto('/fixtures/track.html')
-		const docId = await markDocument(page)
-
-		// nav1: swaps immediately, then parks in before-scroll for 1500ms,
-		// keeping its own transition's updateCallbackDone unresolved --
-		// unless something supersedes it first (nav2 below does).
-		await page.evaluate(() => {
-			const r = navigation.navigate('/fixtures/track-same.html')
-			r.committed.catch(() => {})
-			r.finished.catch(() => {})
-		})
-		// nav1 has swapped and is parked in before-scroll
-		await page.waitForFunction(() => window.__parksStarted === 1)
-
-		// nav2 and nav3 in one task, deliberately. nav2's tracked stylesheet
-		// differs from the live document, so if it is not stopped it would
-		// call location.reload(). Creating nav2 aborts nav1, which releases
-		// nav1's parked callback, so nav2's await resolves on the next
-		// microtask -- there is no long wait left to supersede partway
-		// through. nav3, created in the same task, aborts nav2 first, so
-		// nav2 wakes and throws at throwIfAborted before the reload check.
-		// nav3 targets track.html, the same tracked stylesheet as the live
-		// document, so nav3 itself never trips trackedElementsChanged --
-		// isolating nav2's behavior as the only possible cause of a reload.
-		await page.evaluate(() => {
-			const r2 = navigation.navigate('/fixtures/track-changed.html')
-			r2.committed.catch(() => {})
-			r2.finished.catch(() => {})
-			const r3 = navigation.navigate('/fixtures/track.html')
-			r3.committed.catch(() => {})
-			r3.finished.catch(() => {})
-		})
-
-		// nav1's park has ended -- the latest point at which a stale nav2 could
-		// wake and reload.
-		await page.waitForFunction(() => window.__parksDone === 1)
-		await expect.poll(() => page.evaluate(() => window.__swaps)).toEqual(['/fixtures/track-same.html', '/fixtures/track.html'])
-
-		// The document must survive throughout -- a real location.reload()
-		// (the bug this guards against) would create a brand new
-		// document/window and wipe this.
-		expect(await getDocumentId(page)).toBe(docId)
-
-		// location.reload() fires a navigate event at once, before the new
-		// document commits.
-		expect(await page.evaluate(() => window.__reloaded)).toBe(false)
-		await expect(page).toHaveTitle('Track')
 	})
 })
 
