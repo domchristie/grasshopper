@@ -509,9 +509,15 @@ test.describe('Fallback Events', () => {
 		page.on('pageerror', (err) => pageErrors.push(err))
 
 		await page.addInitScript(() => {
+			window.__parksStarted = 0
+			window.__parksDone = 0
+			window.__navigations = []
+			navigation.addEventListener('navigate', (e) => window.__navigations.push(new URL(e.destination.url).pathname))
 			document.addEventListener('hop:before-fallback', (e) => {
 				e.intercept(async () => {
+					window.__parksStarted++
 					await new Promise((r) => setTimeout(r, 800))
+					window.__parksDone++
 				})
 			})
 		})
@@ -522,19 +528,20 @@ test.describe('Fallback Events', () => {
 		// Parks in the listener above: media type check fails, so grasshopper
 		// awaits the intercept callback before deciding whether to fall back.
 		await page.click('a[href="/unsupported"]')
-		await page.waitForTimeout(100)
+		await page.waitForFunction(() => window.__parksStarted === 1)
 
 		// Supersede the parked hop with a newer navigation.
 		await page.click('a[href="/fixtures/two.html"]')
 		await expect(page).toHaveTitle('Two')
 
-		// Past the 800ms park - the stale hop has had its chance to call fallback().
-		await page.waitForTimeout(1200)
+		// The stale hop's callback has now resolved, so it has had its chance to call fallback().
+		await page.waitForFunction(() => window.__parksDone === 1)
 
-		await expect(page).toHaveTitle('Two')
 		expect(page.url()).toContain('/fixtures/two.html')
 		expect(await getDocumentId(page)).toBe(docId)
 		expect(pageErrors).toEqual([])
+		// A fallback would have added a navigation to /unsupported.
+		expect(await page.evaluate(() => window.__navigations)).toEqual(['/unsupported', '/fixtures/two.html'])
 	})
 })
 
@@ -896,13 +903,9 @@ test.describe('Response Events', () => {
 			document.addEventListener('hop:before-response', (e) => e.preventDefault())
 		})
 
-		// The navigation is canceled, so no frame load ever settles. Wait on the
-		// hop:fetch-end event instead of Playwright's navigation-aware waiting.
-		const ended = page.evaluate(() => new Promise(resolve => {
-			document.addEventListener('hop:fetch-end', () => resolve(), { once: true })
-		}))
+		const settled = waitForSettle(page)
 		await page.click('a[href="/fixtures/two.html"]')
-		await ended
+		expect(await settled).toBe('error')
 
 		await expect(page).toHaveTitle('Test Hub')
 		expect(page.url()).toBe(url)
@@ -1040,9 +1043,15 @@ test.describe('Response Events', () => {
 		// while, so a later navigation has time to supersede an earlier one
 		// that is still waiting on this
 		await page.addInitScript(() => {
+			window.__parksStarted = 0
+			window.__parksDone = 0
+			window.__navigations = []
+			navigation.addEventListener('navigate', (e) => window.__navigations.push(new URL(e.destination.url).pathname))
 			document.addEventListener('hop:before-response', (e) => {
 				e.intercept(async () => {
+					window.__parksStarted++
 					await new Promise((r) => setTimeout(r, 800))
+					window.__parksDone++
 				})
 			})
 		})
@@ -1053,7 +1062,7 @@ test.describe('Response Events', () => {
 		// Starts the navigation to the unsupported media type, then supersedes
 		// it while it is still parked in the intercept above
 		await page.click('a[href="/unsupported"]')
-		await page.waitForTimeout(100)
+		await page.waitForFunction(() => window.__parksStarted === 1)
 		await page.click('a[href="/fixtures/two.html"]')
 
 		// The superseded navigation must not hijack the browser with a real
@@ -1061,10 +1070,12 @@ test.describe('Response Events', () => {
 		await expect(page).toHaveTitle('Two')
 		expect(page.url()).toContain('/fixtures/two.html')
 
-		// Give the superseded navigation's intercept time to resolve, and give
-		// watchOrder's bridged event time to arrive if it does fire
-		await page.waitForTimeout(500)
+		// Both the stale and the newer hop have now parked and resolved their
+		// intercepts, so the stale hop has had its chance to fall back
+		await page.waitForFunction(() => window.__parksDone === 2)
 
+		// A fallback would have added a navigation to /unsupported
+		expect(await page.evaluate(() => window.__navigations)).toEqual(['/unsupported', '/fixtures/two.html'])
 		expect(order).toEqual([])
 		// Same document survived: the superseded hop's fallback() did not run,
 		// so it did not consume the bypass or hijack the browser
@@ -1158,9 +1169,13 @@ test.describe('Transition Events', () => {
 
 		await page.addInitScript(() => {
 			window.__swaps = []
+			window.__parksStarted = 0
+			window.__parksDone = 0
 			document.addEventListener('hop:before-transition', (e) => {
 				e.intercept(async () => {
+					window.__parksStarted++
 					await new Promise((r) => setTimeout(r, 900))
+					window.__parksDone++
 					e.preventDefault()
 				})
 			})
@@ -1174,13 +1189,13 @@ test.describe('Transition Events', () => {
 		// Starts navigating to two.html, then parks inside its before-transition
 		// intercept
 		await page.click('a[href="/fixtures/two.html"]')
-		await page.waitForTimeout(250)
+		await page.waitForFunction(() => window.__parksStarted === 1)
 
 		// Supersedes the still-parked two.html hop before it can swap
 		await page.click('a[href="/fixtures/persist.html"]')
 
-		// Give both parked intercepts time to resolve
-		await page.waitForTimeout(2500)
+		// Both parked callbacks have resolved
+		await page.waitForFunction(() => window.__parksDone === 2)
 
 		// Only the superseding hop swaps; the stale two.html hop must not
 		expect(await page.evaluate(() => window.__swaps)).toEqual(['/fixtures/persist.html'])
@@ -1304,11 +1319,15 @@ test.describe('Swap Events', () => {
 		page.on('pageerror', (err) => pageErrors.push(err))
 
 		await page.addInitScript(() => {
+			window.__parksStarted = 0
 			// only the first navigation parks, and never resolves. Without the
 			// signal race the second one waits on its updateCallbackDone forever
 			document.addEventListener('hop:before-swap', (e) => {
 				if (e.detail.hop.to.pathname === '/fixtures/two.html')
-					e.intercept(() => new Promise(() => {}))
+					e.intercept(() => {
+						window.__parksStarted++
+						return new Promise(() => {})
+					})
 			})
 		})
 
@@ -1319,7 +1338,7 @@ test.describe('Swap Events', () => {
 			r.committed.catch(() => {})
 			r.finished.catch(() => {})
 		})
-		await page.waitForTimeout(200)
+		await page.waitForFunction(() => window.__parksStarted === 1)
 
 		await page.evaluate(() => {
 			const r = navigation.navigate('/fixtures/persist.html')
@@ -1457,6 +1476,8 @@ test.describe('Swap Events', () => {
 
 		await page.addInitScript(() => {
 			window.__swaps = []
+			window.__parksStarted = 0
+			window.__parksDone = 0
 			// Force the path without a view transition: a real, still-active
 			// document.startViewTransition() would have its own ready/
 			// updateCallbackDone/finished promises rejected by the browser
@@ -1469,7 +1490,9 @@ test.describe('Swap Events', () => {
 			})
 			document.addEventListener('hop:before-swap', (e) => {
 				e.intercept(async () => {
+					window.__parksStarted++
 					await new Promise((r) => setTimeout(r, 800))
+					window.__parksDone++
 				})
 			})
 			document.addEventListener('hop:after-swap', (e) => {
@@ -1485,8 +1508,8 @@ test.describe('Swap Events', () => {
 			r.finished.catch(() => {})
 		})
 
-		// Long enough to be parked inside the before-swap intercept
-		await page.waitForTimeout(200)
+		// The first hop is now parked inside the before-swap intercept
+		await page.waitForFunction(() => window.__parksStarted === 1)
 
 		await page.evaluate(() => {
 			const r = navigation.navigate('/fixtures/persist.html')
@@ -1494,8 +1517,8 @@ test.describe('Swap Events', () => {
 			r.finished.catch(() => {})
 		})
 
-		// Past both parked intercepts
-		await page.waitForTimeout(2500)
+		// Both parked intercepts have resolved
+		await page.waitForFunction(() => window.__parksDone === 2)
 
 		expect(await page.evaluate(() => window.__swaps)).toEqual(['/fixtures/persist.html'])
 		await expect(page).toHaveTitle('Persistence')
@@ -2106,7 +2129,7 @@ test.describe('Stylesheet Preloading', () => {
 
 		await stalledPreload
 
-		let fetchEnds = await page.evaluate(() => window.__fetchEnds)
+		const fetchEnds = await page.evaluate(() => window.__fetchEnds)
 		expect(fetchEnds).not.toContain('/fixtures/track.html')
 
 		await page.evaluate(() => {
@@ -2174,10 +2197,18 @@ test.describe('Superseded Hops', () => {
 
 		await page.addInitScript(() => {
 			window.__swaps = []
+			window.__parksStarted = 0
+			window.__parksDone = 0
+			window.__reloaded = false
+			navigation.addEventListener('navigate', (e) => {
+				if (e.navigationType === 'reload') window.__reloaded = true
+			})
 			document.addEventListener('hop:before-scroll', (e) => {
 				if (e.detail.hop.to.pathname === '/fixtures/track-same.html') {
 					e.intercept(async () => {
+						window.__parksStarted++
 						await new Promise((r) => setTimeout(r, 1500))
+						window.__parksDone++
 					})
 				}
 			})
@@ -2197,7 +2228,8 @@ test.describe('Superseded Hops', () => {
 			r.committed.catch(() => {})
 			r.finished.catch(() => {})
 		})
-		await page.waitForTimeout(300)
+		// nav1 has swapped and is parked in before-scroll
+		await page.waitForFunction(() => window.__parksStarted === 1)
 
 		// nav2 and nav3 in one task, deliberately. nav2's tracked stylesheet
 		// differs from the live document, so if it is not stopped it would
@@ -2218,15 +2250,19 @@ test.describe('Superseded Hops', () => {
 			r3.finished.catch(() => {})
 		})
 
-		// Past nav1's park, plenty of time for nav2/nav3 to settle.
-		await page.waitForTimeout(3000)
+		// nav1's park has ended -- the latest point at which a stale nav2 could
+		// wake and reload.
+		await page.waitForFunction(() => window.__parksDone === 1)
+		await expect.poll(() => page.evaluate(() => window.__swaps)).toEqual(['/fixtures/track-same.html', '/fixtures/track.html'])
 
 		// The document must survive throughout -- a real location.reload()
 		// (the bug this guards against) would create a brand new
 		// document/window and wipe this.
 		expect(await getDocumentId(page)).toBe(docId)
 
-		expect(await page.evaluate(() => window.__swaps)).toEqual(['/fixtures/track-same.html', '/fixtures/track.html'])
+		// location.reload() fires a navigate event at once, before the new
+		// document commits.
+		expect(await page.evaluate(() => window.__reloaded)).toBe(false)
 		await expect(page).toHaveTitle('Track')
 	})
 })
