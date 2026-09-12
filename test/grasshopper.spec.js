@@ -31,6 +31,17 @@ async function watchFallback(page) {
 	return { detail }
 }
 
+// Resolves with 'success' or 'error' when the next navigation finishes. Call it
+// before the action that navigates, then await it. Unlike hop:fetch-end, it
+// waits for the whole hop, so a swap that should not happen cannot slip in
+// after the assertions.
+function waitForSettle(page) {
+	return page.evaluate(() => new Promise((resolve) => {
+		navigation.addEventListener('navigatesuccess', () => resolve('success'), { once: true })
+		navigation.addEventListener('navigateerror', () => resolve('error'), { once: true })
+	}))
+}
+
 test.describe('Basic Navigation', () => {
 	test('push navigation keeps same document', async ({ page }) => {
 		await page.goto('/')
@@ -434,17 +445,22 @@ test.describe('Fallback Events', () => {
 		const url = page.url()
 
 		await page.evaluate(() => {
+			window.__navigations = []
+			navigation.addEventListener('navigate', (e) => window.__navigations.push(new URL(e.destination.url).pathname))
 			document.addEventListener('hop:before-fallback', (e) => {
 				e.preventDefault()
 			})
 		})
 
+		const settled = waitForSettle(page)
 		await page.click('a[href="/unsupported"]')
-		await page.waitForTimeout(500)
+		expect(await settled).toBe('error')
 		// The fallback was skipped because the event was canceled - stay put
 		expect(page.url()).toBe(url)
 		expect(await getDocumentId(page)).toBe(docId)
 		expect(pageErrors).toEqual([])
+		// A fallback would start a second navigation to /unsupported
+		expect(await page.evaluate(() => window.__navigations)).toEqual(['/unsupported'])
 	})
 
 	// A form POST whose response is not a redirect has no fallback to cancel
@@ -595,7 +611,6 @@ test.describe('Empty Responses', () => {
 		}))
 		await page.evaluate(() => document.querySelector('input[type="submit"]').click())
 		await ended
-		await page.waitForTimeout(200)
 
 		expect(page.url()).toBe(url)
 		expect(await page.evaluate(() => document.title)).toBe('Form 204')
@@ -791,9 +806,10 @@ test.describe('Fetch Events', () => {
 			})
 		})
 
+		const settled = waitForSettle(page)
 		await page.click('a[href="/fixtures/two.html"]')
+		expect(await settled).toBe('error')
 		// Should stay on the same page since before-fetch was canceled
-		await page.waitForTimeout(500)
 		await expect(page).toHaveTitle('Test Hub')
 		expect(page.url()).toBe(url)
 		expect(await getDocumentId(page)).toBe(docId)
@@ -825,7 +841,6 @@ test.describe('Fetch Events', () => {
 		// Block the request to simulate a network error
 		await page.route('/fixtures/two.html', route => route.abort())
 		await page.click('a[href="/fixtures/two.html"]').catch(() => {})
-		await page.waitForTimeout(500)
 
 		const result = await events
 		expect(result.map(e => e.type)).toEqual(['fetch-error', 'fetch-end'])
@@ -935,8 +950,9 @@ test.describe('Response Events', () => {
 			document.addEventListener('hop:fetch-load', () => window.__order.push('fetch-load'))
 		})
 
+		const settled = waitForSettle(page)
 		await page.click('a[href="/fixtures/two.html"]')
-		await page.waitForTimeout(500)
+		expect(await settled).toBe('error')
 
 		expect(await page.evaluate(() => window.__order)).toEqual(['intercept'])
 		await expect(page).toHaveTitle('Test Hub')
@@ -1001,8 +1017,9 @@ test.describe('Response Events', () => {
 			document.addEventListener('hop:before-fallback', () => window.__fellBack = true)
 		})
 
+		const settled = waitForSettle(page)
 		await page.click('a[href="/unsupported"]')
-		await page.waitForTimeout(500)
+		expect(await settled).toBe('error')
 
 		// Canceling first means the media-type check never runs, so there is no
 		// fallback to the raw JSON
@@ -1274,13 +1291,12 @@ test.describe('Swap Events', () => {
 		})
 
 		await page.click('a[href="/fixtures/two.html"]')
-		await page.waitForTimeout(500)
-		// Swap was prevented so title stays
-		await expect(page).toHaveTitle('Test Hub')
-		expect(await getDocumentId(page)).toBe(docId)
 		// A canceled before-swap does not throw -- swap() returns early --
 		// so the update callback still resolves and hop:load must still fire
 		expect(await loaded).toBe(true)
+		// Swap was prevented so title stays
+		await expect(page).toHaveTitle('Test Hub')
+		expect(await getDocumentId(page)).toBe(docId)
 	})
 
 	test('a listener parked forever in hop:before-swap does not block a later navigation', async ({ page }) => {
@@ -1329,8 +1345,11 @@ test.describe('Swap Events', () => {
 			})
 		})
 
+		const loaded = page.evaluate(() => new Promise((resolve) => {
+			document.addEventListener('hop:load', () => resolve(), { once: true })
+		}))
 		await page.click('a[href="/fixtures/two.html"]')
-		await page.waitForTimeout(500)
+		await loaded
 		// Swap was prevented so title stays
 		await expect(page).toHaveTitle('Test Hub')
 		expect(await getDocumentId(page)).toBe(docId)
@@ -1392,12 +1411,15 @@ test.describe('Swap Events', () => {
 			})
 		})
 
+		const loaded = page.evaluate(() => new Promise((resolve) => {
+			document.addEventListener('hop:load', () => resolve(), { once: true })
+		}))
 		await page.click('a[href="/fixtures/two.html"]')
 		// Both callbacks ran to completion, even though the first one canceled
 		expect(await calls).toEqual(['a', 'b'])
 
 		// The cancel still prevented the swap
-		await page.waitForTimeout(200)
+		await loaded
 		await expect(page).toHaveTitle('Test Hub')
 		expect(await getDocumentId(page)).toBe(docId)
 	})
@@ -1418,8 +1440,11 @@ test.describe('Swap Events', () => {
 			})
 		})
 
+		const loaded = page.evaluate(() => new Promise((resolve) => {
+			document.addEventListener('hop:load', () => resolve(), { once: true })
+		}))
 		await page.click('a[href="/fixtures/two.html"]')
-		await page.waitForTimeout(500)
+		await loaded
 
 		expect(await page.evaluate(() => window.__ran)).toBe(false)
 		await expect(page).toHaveTitle('Test Hub')
@@ -1934,8 +1959,9 @@ test.describe('Timeout', () => {
 		await page.goto('/')
 		const docId = await markDocument(page)
 
+		const settled = waitForSettle(page)
 		await page.click('a[href="/slow"]')
-		await page.waitForTimeout(1500)
+		expect(await settled).toBe('error')
 
 		await expect(page).toHaveTitle('Test Hub')
 		expect(await getDocumentId(page)).toBe(docId)
@@ -2032,8 +2058,9 @@ test.describe('Timeout', () => {
 		await page.goto('/')
 		const docId = await markDocument(page)
 
+		const settled = waitForSettle(page)
 		await page.click('a[href="/slow"]')
-		await page.waitForTimeout(1200)
+		expect(await settled).toBe('error')
 
 		// hop.abort('too slow') must behave like hop.abort() with no reason,
 		// which is already silent -- a string reason must not be reported as
@@ -2416,8 +2443,9 @@ test.describe('Re-entrant Navigation', () => {
 			document.addEventListener('hop:before-intercept', (e) => e.detail.hop.abort(), { once: true })
 		})
 
+		const settled = waitForSettle(page)
 		await page.click('a[href="/fixtures/two.html"]')
-		await page.waitForTimeout(500)
+		expect(await settled).toBe('error')
 
 		// aborting must stop the navigation, not hand it to the browser as a
 		// full page load -- same document, same URL, same title
@@ -2958,11 +2986,10 @@ test.describe('Start/Stop', () => {
 			stop()
 		})
 
-		await page.waitForTimeout(500)
+		await expect.poll(() => failedSlow).not.toEqual([])
 		await expect(page).toHaveTitle('Test Hub')
 		expect(page.url()).toBe(url)
 		expect(await getDocumentId(page)).toBe(docId)
 		expect(pageErrors).toEqual([])
-		await expect.poll(() => failedSlow).not.toEqual([])
 	})
 })
