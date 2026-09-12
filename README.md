@@ -94,7 +94,7 @@ This is useful for filtering, sorting, or making changes in-place.
 - The triggering element must have `data-hop-type="replace"` (or be inside one)
 - The page must have `<meta name="hop-refresh-scroll" content="preserve">`
 
-## Exports
+## JavaScript API
 
 ### `start` and `stop`
 
@@ -136,7 +136,7 @@ await runScripts()
 
 Events are dispatched on the navigation's source element (typically a link or form submitter) if it exists in the DOM, or the `document`.
 
-All events include a [`hop`](#hop-object) object in their `detail`.
+All events include a [`hop`](#hop-object) object in their `detail`. Listeners can change some `hop` properties to change later steps. For example, set `hop.headers` in `hop:before-fetch`, or `hop.timeout` in `hop:before-intercept`.
 
 - [`hop:before-intercept`](#hopbefore-intercept)
 - [`hop:before-fetch`](#hopbefore-fetch)
@@ -154,44 +154,70 @@ All events include a [`hop`](#hop-object) object in their `detail`.
 - [`hop:load`](#hopload)
 - [`hop:after-transition`](#hopafter-transition)
 
-### Interceptable events
+### Canceling, Intercepting, and Aborting
 
-**Interceptable** events expose an `e.intercept(callback)` method. The callback is an async function that runs before the default behavior proceeds. All `before-*` events are cancelable and interceptable, apart from `hop:before-intercept`, which is only cancelable.
+`hop:before-*` events are cancelable. Call `preventDefault()` on the event to skip the next step. The navigation stops only if it needs that step. For example, canceling `hop:before-fetch` stops the navigation because there is no response to use. Canceling `hop:before-transition` skips the view transition, but the swap still runs.
 
-Cancel in one of two ways:
+All `hop:before-*` events _except `hop:before-intercept`_ are **interceptable**. Interceptable events expose an `intercept(callback)` method. The callback is an async function that runs before the default behavior proceeds. This is useful for pausing part of the navigation before automatically resuming. For example:
 
-- Call `e.preventDefault()` **in the listener** to cancel immediately. The intercept callback does not run.
-- Call `e.preventDefault()` **inside the intercept callback** to cancel after async work. The callback runs first, then the default behavior is skipped.
+```js
+document.addEventListener('hop:before-fetch', (e) => {
+  e.intercept(async () => {
+    const token = await getToken()
+    e.detail.hop.headers['Authorization'] = `Bearer ${token}`
+  })
+})
+```
+
+Call `preventDefault()` in the listener to cancel at once. The intercept callbacks do not run.
+
+Call `preventDefault()` inside an intercept callback to cancel after async work. The callbacks finish first, then grasshopper skips the default behavior.
+
+Call `hop.abort(reason)` from any event, or at any time during the navigation. It aborts `hop.signal`, which cancels an in-flight fetch and stops the navigation at the next step. It does not wait for running intercept callbacks to finish. An abort is silent: `hop:fetch-error` does not fire, unless the reason is a `TimeoutError`. `hop:fetch-end` still fires.
 
 ### `hop:before-intercept`
 
-Fired before navigation is intercepted. Cancel to fall back to standard browser navigation.
+Fires before grasshopper intercepts the navigation.
+**Canceling** hands the navigation to the browser: a standard page load.
+**Aborting** stops the navigation before the fetch.
+
+_Unlike other `hop:before-*` events, this is not interceptable._
 
 ### `hop:before-fetch`
 
-Fired before the page is fetched. Cancel to skip the fetch entirely and abort the navigation.
+Fires before the page is fetched.
+**Canceling** skips the fetch and stops the navigation.
+**Aborting** does the same.
 
 ### `hop:fetch-start`
 
-Fired immediately before the fetch request is made (after `hop:before-fetch` has resolved).
+Fires immediately before the fetch request goes out.
 
 ### `hop:before-response`
 
-Fired when the `fetch` completes, but before the response is handled and the body is read. Cancel to abort the navigation.
+Fires when the fetch completes, before the response is handled and the body is read.
+**Canceling** stops the navigation and cancels the response body.
+**Aborting** does the same.
 
 Use `hop.response.clone()` if a listener needs the body, to prevent future read errors.
 
 ### `hop:fetch-load`
 
-Fired after the page has been fetched and new stylesheets have been preloaded.
+Fires after the page is fetched, parsed, and new stylesheets are preloaded.
 
 ### `hop:fetch-error`
 
-Fired when the fetch throws an error (e.g. network failure). Includes the error object in `e.detail.error`. The navigation is then aborted — the URL and page content remain unchanged, and a `navigateerror` event fires on `window.navigation`, which can be used to display an error message. (In browsers without precommit support, a failed fetch during a back/forward traversal cannot un-commit the URL: `navigateerror` still fires, but the address bar may show the destination URL.)
+Fires when the fetch throws an error (e.g. network failure), or times out (see [Load Timeout](#load-timeout)).
+
+`e.detail.error` holds the error. The navigation then stops, and the URL and page content stay as they are. (On browsers without `NavigationPrecommitController`, a back/forward traversal has already committed the URL by this point, so the address bar shows the destination while the content stays put.)
 
 ### `hop:before-fallback`
 
-Fired when grasshopper will not swap the response, just before it performs a standard (unintercepted) request. `e.detail.reason` says why:
+Fires when grasshopper will not swap the response, just before it performs a standard (unintercepted) request.
+**Canceling** skips the browser request. The navigation still stops.
+**Aborting** also skips the browser request. The navigation stops with your reason instead.
+
+`e.detail.reason` says why grasshopper will not swap the response. `e.detail.error` holds the `DOMException` that stops the navigation. Grasshopper throws it whether or not you cancel.
 
 | Reason | Description |
 |--------|-------------|
@@ -213,43 +239,51 @@ document.addEventListener('hop:before-fallback', (e) => {
 })
 ```
 
-Cancelling on its own is enough to skip the navigation. Intercept as well to read the response: the body is torn down once the navigation ends, so reads outside the callback fail with an `AbortError`.
-
-`e.detail.error` holds the `DOMException` that aborts the navigation. It is thrown whether or not you cancel.
+Canceling on its own is enough to skip the navigation. Intercept as well to read the response: the body is torn down once the navigation ends, so reads outside the callback fail with an `AbortError`.
 
 A form `POST` whose response is not a redirect has no fallback to cancel. The event still fires, and the navigation stops.
 
 ### `hop:fetch-end`
 
-Fired after every fetch attempt, whether it succeeded or failed.
+Fires at the end of the load phase: after the fetch succeeds or fails, or after a cancel or abort skips it.
 
 ### `hop:before-transition`
 
-Fired before `document.startViewTransition()` is called. Cancel to skip the view transition (the swap still runs without an animation).
+Fires before `document.startViewTransition()` is called.
+**Canceling** skips the view transition. The swap still runs, with no animation.
+**Aborting** stops the navigation. Nothing swaps.
+
+It does not fire if the browser already shows its own visual transition (for example, after a swipe-back gesture).
 
 ### `hop:before-swap`
 
-Fired before the DOM swap. Cancel to prevent the swap entirely (the document content remains unchanged).
+Fires before the DOM swap.
+**Canceling** skips the swap. The scroll still runs, and `hop:load` still fires.
+**Aborting** skips the swap and the scroll.
 
 ### `hop:after-swap`
 
-Fired immediately after the DOM swap.
+Fires immediately after the DOM swap.
 
 ### `hop:before-scroll`
 
-Fired before scroll position is set i.e. scrolled to top, scrolled to a fragment, or restored after a traversal. Cancel to prevent scrolling entirely.
+Fires before the scroll position is set: to the top, to a fragment, or restored after a traversal.
+**Canceling** leaves the scroll position untouched.
+**Aborting** skips the scroll. The document is already swapped, but its new scripts do not run and `hop:load` does not fire.
 
 ### `hop:after-scroll`
 
-Fired after scroll position is restored i.e. scrolled to top, scrolled to a fragment, or restored after a traversal.
+Fires after the scroll position is set.
 
 ### `hop:load`
 
-Fired after the swap is complete and new scripts have executed.
+Fires after the swap, and after new scripts run.
+It does not fire if the navigation aborts during the swap, or if a newer navigation has taken over.
 
 ### `hop:after-transition`
 
-Fired after the view transition finishes.
+Fires after the view transition finishes.
+It does not fire if the swap or scroll fails or aborts, or if a newer navigation has taken over.
 
 ## Hop Object
 
@@ -258,6 +292,8 @@ The `hop` object is available via `e.detail.hop` in all events. It is also passe
 | Property | Type | Description |
 |----------|------|-------------|
 | `id` | `string` | A UUID identifying the navigation. |
+| `timeout` | `number` | How long the load phase may take, in ms. Defaults to `60000`. Set to falsy to disable. |
+| `scroll` | `"preserve" \| undefined` | Set to `"preserve"` to keep the scroll position. `hop:before-scroll` then does not fire. |
 | `sourceElement` | `Element \| undefined` | The element that initiated the navigation (e.g. a link or form submitter). |
 | `direction` | `"forward" \| "back" \| "none"` | `"forward"` for pushes and traversals to a higher history index, `"back"` for traversals to a lower index, `"none"` for replaces and reloads. |
 | `from` | `URL` | The URL of the page at the time of navigation. |
@@ -265,17 +301,21 @@ The `hop` object is available via `e.detail.hop` in all events. It is also passe
 | `method` | `string` | `"GET"` or `"POST"`. |
 | `body` | `FormData \| undefined` | The form data, if the navigation was triggered by a form submission. |
 | `headers` | `object` | Request headers. Includes `x-hop-id`. |
-| `signal` | `AbortSignal \| null` | The abort signal for the fetch request. Available from `hop:before-fetch` onwards. |
+| `signal` | `AbortSignal` | The abort signal for the fetch request. Available from `hop:before-intercept` onwards. |
+| `abort` | `function` | Aborts this navigation. Takes an optional reason. See [Canceling, Intercepting, and Aborting](#canceling-intercepting-and-aborting). |
 | `response` | `Response \| undefined` | The fetch response. Available from `hop:before-response` onwards. |
-| `doc` | `Document \| undefined` | The parsed destination document. Available from `hop:fetch-load` onwards. |
+| `doc` | `Document \| undefined` | The parsed destination document. Available from `hop:fetch-load` onwards, or from `hop:before-fallback` when the reason is `disabled`. |
 | `navEvent` | `NavigateEvent` | The underlying [NavigateEvent](https://developer.mozilla.org/en-US/docs/Web/API/NavigateEvent). |
+
+## Load Timeout
+
+The load phase (fetch, parse, and stylesheet preload) has a default timeout of `60000` ms. If it is not done by then, the navigation aborts with a `TimeoutError` and `hop:fetch-error` fires. Set a custom timeout by updating `hop.timeout` in the `before-intercept` event. Set to a falsy value to disable.
 
 ## Navigation ID
 
 Each navigation is assigned a UUID. The ID is:
 
 - Available as `hop.id` in all event details
-- Set as a `data-hop-id` attribute on the source element during navigation (removed after the transition completes)
 - Sent as an `x-hop-id` header with the fetch request
 
 ## How It Works
@@ -294,7 +334,7 @@ Each navigation is assigned a UUID. The ID is:
 
 ## Browser Support
 
-Requires the [Navigation API](https://caniuse.com/mdn-api_navigation).
+Requires the [Navigation API](https://caniuse.com/wf-navigation) and [AbortSignal.any](https://caniuse.com/wf-abortsignal-any).
 
 ## Attributes Reference
 
@@ -304,7 +344,6 @@ Requires the [Navigation API](https://caniuse.com/mdn-api_navigation).
 | `data-hop` | `"false"` | Disables fetch navigation on this element and descendants. |
 | `data-hop-type` | `"replace"` | Uses `replaceState` instead of `pushState`. |
 | `data-hop-track` | `"reload"` | Triggers full reload if element changes between pages. |
-| `data-hop-id` | UUID | Set automatically on the source element during navigation. |
 
 ## Meta Tags Reference
 

@@ -2,7 +2,7 @@ import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { join, extname } from 'node:path'
 
-const PORT = process.env.PORT || 3000
+const PORT = Number(process.env.PORT) || 3000
 const ROOT = import.meta.dirname
 const PROJECT_ROOT = join(ROOT, '..')
 
