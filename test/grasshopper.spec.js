@@ -1763,10 +1763,8 @@ test.describe('Script Execution', () => {
 			r.committed.catch(() => {})
 			r.finished.catch(() => {})
 		})
-		await page.waitForTimeout(1200)
-
 		await expect(page).toHaveTitle('Lone Module Target')
-		expect(pageErrors.map((err) => err.message)).toContain('boom from runScripts')
+		await expect.poll(() => pageErrors.map((err) => err.message)).toContain('boom from runScripts')
 	})
 })
 
@@ -1928,14 +1926,20 @@ test.describe('Slow Responses', () => {
 	})
 
 	test('navigation abort cancels slow request', async ({ page }) => {
+		const failedSlow = []
+		page.on('requestfailed', (r) => r.url().endsWith('/slow') && failedSlow.push(r.failure()?.errorText))
+
 		await page.goto('/')
 		const docId = await markDocument(page)
 		// Start slow navigation (don't await)
+		const slowRequest = page.waitForRequest((req) => req.url().endsWith('/slow'))
 		page.click('a[href="/slow"]')
-		// Wait a moment for the navigation to start
-		await page.waitForTimeout(200)
+		await slowRequest
 		page.click('a[href="/slow?delay=500"]')
-		await page.waitForTimeout(4000)
+		await expect.poll(() => failedSlow).not.toEqual([])
+		// Wait for the swap first: the hub has two <p> elements, and a
+		// strict-mode violation fails toHaveText at once instead of retrying
+		await expect(page).toHaveTitle('Slow Page')
 		await expect(page.locator('p')).toHaveText('Response was delayed by 500ms.')
 		expect(await getDocumentId(page)).toBe(docId)
 	})
@@ -2093,13 +2097,14 @@ test.describe('Stylesheet Preloading', () => {
 
 		await page.goto('/')
 
+		const stalledPreload = page.waitForRequest('**/styles.css?v=1')
 		await page.evaluate(() => {
 			const r = navigation.navigate('/fixtures/track.html')
 			r.committed.catch(() => {})
 			r.finished.catch(() => {})
 		})
 
-		await page.waitForTimeout(1000)
+		await stalledPreload
 
 		let fetchEnds = await page.evaluate(() => window.__fetchEnds)
 		expect(fetchEnds).not.toContain('/fixtures/track.html')
@@ -2110,11 +2115,8 @@ test.describe('Stylesheet Preloading', () => {
 			r.finished.catch(() => {})
 		})
 
-		await page.waitForTimeout(1500)
-
-		fetchEnds = await page.evaluate(() => window.__fetchEnds)
-		expect(fetchEnds).toContain('/fixtures/track.html')
 		await expect(page).toHaveTitle('Two')
+		await expect.poll(() => page.evaluate(() => window.__fetchEnds)).toContain('/fixtures/track.html')
 		expect(pageErrors).toEqual([])
 	})
 })
@@ -2144,8 +2146,7 @@ test.describe('Superseded Hops', () => {
 			r.finished.catch(() => {})
 		})
 
-		// Long enough for the swap, well short of the 1500ms script delay.
-		await page.waitForTimeout(400)
+		await expect(page).toHaveTitle('Scripts Target')
 
 		await page.evaluate(() => {
 			const r = navigation.navigate('/fixtures/two.html')
@@ -2153,10 +2154,12 @@ test.describe('Superseded Hops', () => {
 			r.finished.catch(() => {})
 		})
 
-		// Past the script delay, so the stale runScripts() has definitely resolved.
-		// runScripts() still runs for the stale hop -- those scripts are in the
-		// live document and must execute -- only the hop:load event is guarded.
-		await page.waitForTimeout(2500)
+		// The stale runScripts() resolves when scripts-external.js actually runs.
+		// Wait for that -- it is the moment a stale hop:load would fire, if the
+		// guard did not block it. runScripts() still runs for the stale hop --
+		// those scripts are in the live document and must execute -- only the
+		// hop:load event is guarded.
+		await page.waitForFunction(() => document.__order?.includes('external-classic'))
 
 		const loads = await page.evaluate(() => window.__loads)
 		expect(loads).toEqual(['/fixtures/two.html'])
@@ -2270,10 +2273,7 @@ test.describe('Load Events', () => {
 		await page.goto('/')
 		await page.click('a[href="/fixtures/two.html"]')
 		await expect(page).toHaveTitle('Two')
-		await page.waitForTimeout(500)
-
-		const loads = await page.evaluate(() => window.__loads)
-		expect(loads).toContain('/fixtures/two.html')
+		await expect.poll(() => page.evaluate(() => window.__loads)).toContain('/fixtures/two.html')
 		expect(pageErrors).toEqual([])
 	})
 
@@ -2301,10 +2301,7 @@ test.describe('Load Events', () => {
 			r.finished.catch(() => {})
 		})
 
-		await page.waitForTimeout(3000)
-
-		const loads = await page.evaluate(() => window.__loads)
-		expect(loads).toContain('/fixtures/scripts-target.html')
+		await expect.poll(() => page.evaluate(() => window.__loads)).toContain('/fixtures/scripts-target.html')
 		expect(pageErrors).toEqual([])
 	})
 
@@ -2333,7 +2330,7 @@ test.describe('Load Events', () => {
 		})
 
 		// Swapped, but runScripts() is still pending on the slow external script
-		await page.waitForTimeout(500)
+		await expect(page).toHaveTitle('Scripts Target')
 
 		await page.evaluate(() => {
 			// A same-page hash navigation, which grasshopper ignores at the
@@ -2343,10 +2340,7 @@ test.describe('Load Events', () => {
 			r.finished.catch(() => {})
 		})
 
-		await page.waitForTimeout(2500)
-
-		const loads = await page.evaluate(() => window.__loads)
-		expect(loads).toContain('/fixtures/scripts-target.html')
+		await expect.poll(() => page.evaluate(() => window.__loads)).toContain('/fixtures/scripts-target.html')
 		expect(pageErrors).toEqual([])
 	})
 
@@ -2381,7 +2375,7 @@ test.describe('Load Events', () => {
 			})
 
 			// Swapped, but runScripts() is still pending on the slow external script
-			await page.waitForTimeout(400)
+			await expect(page).toHaveTitle('Scripts Target')
 
 			await page.evaluate(() => {
 				const r = navigation.navigate('/fixtures/two.html')
@@ -2389,10 +2383,7 @@ test.describe('Load Events', () => {
 				r.finished.catch(() => {})
 			})
 
-			await page.waitForTimeout(2500)
-
-			const loads = await page.evaluate(() => window.__loads)
-			expect(loads).toContain('/fixtures/scripts-target.html')
+			await expect.poll(() => page.evaluate(() => window.__loads)).toContain('/fixtures/scripts-target.html')
 			expect(pageErrors).toEqual([])
 		})
 	}
@@ -2803,12 +2794,13 @@ test.describe('Non-precommit Navigation', () => {
 		await expect(page).toHaveTitle('Two') // gives us a history entry to go back to
 
 		// Start a slow push that will still be in flight.
+		const slowRequest = page.waitForRequest((req) => req.url().endsWith('/slow'))
 		await page.evaluate(() => {
 			const r = navigation.navigate('/slow')
 			r.committed.catch(() => {})
 			r.finished.catch(() => {})
 		})
-		await page.waitForTimeout(300) // the fetch is genuinely in flight now
+		await slowRequest
 
 		// Go back while the push's fetch is still in flight. Old bug: abortController
 		// was assigned in only one branch, so this traversal read the push's
@@ -2819,15 +2811,13 @@ test.describe('Non-precommit Navigation', () => {
 			r.committed.catch(() => {})
 			r.finished.catch(() => {})
 		})
-		await page.waitForTimeout(1500)
+		await expect(page).toHaveTitle('Test Hub')
+		await expect.poll(() => page.evaluate(() => window.__swaps)).toContain('/')
 
 		const beforeFetch = await page.evaluate(() => window.__beforeFetch)
-		const swaps = await page.evaluate(() => window.__swaps)
 
 		const traversalFetch = beforeFetch.find((e) => e.type === 'traverse')
 		expect(traversalFetch?.aborted).toBe(false)
-		expect(swaps).toContain('/')
-		await expect(page).toHaveTitle('Test Hub')
 		expect(new URL(page.url()).pathname).toBe('/')
 		expect(pageErrors).toEqual([])
 	})
@@ -2835,6 +2825,9 @@ test.describe('Non-precommit Navigation', () => {
 	test('a fragment link cancels an in-flight navigation', async ({ page }) => {
 		const pageErrors = []
 		page.on('pageerror', (err) => pageErrors.push(err))
+
+		const failedSlow = []
+		page.on('requestfailed', (r) => r.url().endsWith('/slow') && failedSlow.push(r.failure()?.errorText))
 
 		await forceNoPrecommit(page)
 		await page.addInitScript(() => {
@@ -2848,15 +2841,16 @@ test.describe('Non-precommit Navigation', () => {
 		const docId = await markDocument(page)
 
 		// Start a slow navigation without awaiting it - the /slow route takes 3s.
+		const slowRequest = page.waitForRequest((req) => req.url().endsWith('/slow'))
 		page.click('a[href="/slow"]')
-		await page.waitForTimeout(400) // the fetch is genuinely in flight now
+		await slowRequest
 
 		// grasshopper ignores this navigation via isSamePageHash, so on the
 		// non-precommit path hop.signal (abortController.signal alone, since
 		// preventDefault() aborts ev.signal) is the only thing that can still
 		// cancel the in-flight /slow fetch.
 		await page.click('a[href="#local-fragment"]')
-		await page.waitForTimeout(4000) // well past the 3s /slow route
+		await expect.poll(() => failedSlow).not.toEqual([])
 
 		expect(await page.evaluate(() => window.__swaps)).not.toContain('/slow')
 		await expect(page).toHaveTitle('Test Hub')
