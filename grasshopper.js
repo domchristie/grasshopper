@@ -21,7 +21,7 @@ export function start() {
 export function stop() {
 	if (!started) return
 	navigation.removeEventListener('navigate', onNavigate)
-	abortController?.abort(new DOMException('Stopped', 'AbortError'))
+	abortController?.abort(exception('stopped'))
 	started = false
 }
 
@@ -29,7 +29,7 @@ async function onNavigate(ev) {
 	if (bypass) return
 	const oldAbortController = abortController
 	abortController = new AbortController()
-	oldAbortController?.abort(new DOMException('Navigation was superseded', 'AbortError'))
+	oldAbortController?.abort(exception('superseded'))
 
 	const canPrecommit = nativePrecommit && ev.cancelable
 	let { id = crypto.randomUUID(), doc } = ev.info?.hop || {}
@@ -137,32 +137,31 @@ addEventListener('DOMContentLoaded', start)
 
 async function loadDoc(hop) {
 	const timer = hop.timeout && setTimeout(
-		() => hop.abort(new DOMException('Navigation timed out', 'TimeoutError')),
-		hop.timeout
+		() => hop.abort(exception('timeout')), hop.timeout
 	)
 	try {
 		if (!await sendInterceptable(hop, 'before-fetch'))
-			throw new DOMException('before-fetch was cancelled', 'AbortError')
+			throw exception('before-fetch')
 		send(hop, 'fetch-start')
 
 		hop.response = await fetch(hop.to.href, hop)
 
 		if (!await sendInterceptable(hop, 'before-response'))
-			throw new DOMException('before-response was cancelled', 'AbortError')
+			throw exception('before-response')
 
 		if ([204, 205].includes(hop.response.status))
-			throw new DOMException(`Response status is: ${hop.response.status}`, 'AbortError')
+			throw exception('no-content', hop.response.status)
 		const contentType = hop.response.headers.get('content-type')
 		const mediaType = contentType?.split(';')[0].trim()
 		const contentDisposition = hop.response.headers.get('content-disposition')
 		if (isAttachment(contentDisposition))
-			throw await tryFallback(hop, `Response is an attachment: ${contentDisposition}`, 'NotSupportedError', 'attachment')
+			throw await tryFallback(hop, 'attachment', contentDisposition)
 		if (!supportsMediaType(mediaType))
-			throw await tryFallback(hop, `Unsupported media type: ${mediaType}`, 'NotSupportedError', 'unsupported-media-type')
+			throw await tryFallback(hop, 'unsupported-media-type', mediaType)
 		if (hop.response.redirected) {
 			const redirectedTo = new URL(hop.response.url)
 			if (redirectedTo.origin !== hop.to.origin)
-				throw await tryFallback(hop, `Redirected to a different origin: ${redirectedTo.origin}`, 'SecurityError', 'cross-origin-redirect')
+				throw await tryFallback(hop, 'cross-origin-redirect', redirectedTo.origin)
 		}
 
 		const text = await hop.response.text()
@@ -170,7 +169,7 @@ async function loadDoc(hop) {
 		hop.doc.querySelectorAll('noscript').forEach((el) => el.remove())
 
 		if (!enabled(hop.doc))
-			throw await tryFallback(hop, 'Destination document has disabled Grasshopper', 'NotAllowedError', 'disabled')
+			throw await tryFallback(hop, 'disabled')
 
 		await until(Promise.all(preloadStyles(hop.doc)), hop.signal)
 		send(hop, 'fetch-load')
@@ -420,8 +419,8 @@ function trackedElementsChanged(doc) {
 	return oldEls.some(oldEl => !newEls.some(newEl => newEl.isEqualNode(oldEl)))
 }
 
-async function tryFallback(hop, message, name, reason) {
-	const error = new DOMException(message, name)
+async function tryFallback(hop, reason, detail) {
+	const error = exception(reason, detail)
 	if (await sendInterceptable(hop, 'before-fallback', { error, reason })
 		&& canFallback(hop.response, hop.navEvent))
 		fallback(hop.response?.url || hop.to.href)
@@ -434,6 +433,23 @@ const canFallback = (response, navEvent) =>
 function withBypass(navigate) {
 	bypass = true
 	try { return navigate() } finally { bypass = false }
+}
+
+const EXCEPTIONS = {
+	'stopped': ['Stopped', 'AbortError'],
+	'superseded': ['Navigation was superseded', 'AbortError'],
+	'timeout': ['Navigation timed out', 'TimeoutError'],
+	'before-fetch': ['before-fetch was cancelled', 'AbortError'],
+	'before-response': ['before-response was cancelled', 'AbortError'],
+	'no-content': ['Response status is', 'AbortError'],
+	'attachment': ['Response is an attachment', 'NotSupportedError'],
+	'unsupported-media-type': ['Unsupported media type', 'NotSupportedError'],
+	'cross-origin-redirect': ['Redirected to a different origin', 'SecurityError'],
+	'disabled': ['Destination document has disabled Grasshopper', 'NotAllowedError']
+}
+function exception(reason, detail) {
+	const [message, name] = EXCEPTIONS[reason]
+	return new DOMException(detail == null ? message : `${message}: ${detail}`, name)
 }
 
 const fallback = (to) => withBypass(() => location.assign(to))
