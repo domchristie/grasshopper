@@ -180,7 +180,7 @@ createServer((req, res) => {
   }
   console.log(`${req.method} localhost:${PORT + 1}/ 200 cors-target`)
   res.writeHead(200, { ...corsHeaders, 'Content-Type': 'text/html; charset=utf-8' })
-  res.end('<!DOCTYPE html><html><head><title>CORS</title></head><body><h1>Cross-Origin Page</h1><a href="http://localhost:' + PORT + '/">Back</a></body></html>')
+  res.end('<!DOCTYPE html><html><head><title>CORS</title><link rel="stylesheet" href="http://localhost:' + PORT + '/fixtures/styles.css" /></head><body><h1>Cross-Origin Page</h1><a href="http://localhost:' + PORT + '/">Back</a></body></html>')
 }).listen(PORT + 1, () => console.log(`http://localhost:${PORT + 1} (cors)`))
 
 // --- helpers ---
@@ -255,6 +255,7 @@ function formResultHTML(method, params) {
   <title>Form Result</title>
   <script src="/grasshopper.js" type="module"></script>
   <meta name="hop" content="true" />
+  <link rel="stylesheet" href="/fixtures/styles.css" />
 </head>
 <body>
   <h1>Form ${esc(method)} Result</h1>
@@ -277,6 +278,7 @@ function slowHTML(delay) {
   <title>Slow Page</title>
   <script src="/grasshopper.js" type="module"></script>
   <meta name="hop" content="true" />
+  <link rel="stylesheet" href="/fixtures/styles.css" />
 </head>
 <body>
   <h1>Slow Page</h1>
