@@ -10,9 +10,11 @@ let started = false
 let abortController
 let viewTransition
 let bypass
+let pageNonce
 
 export function start() {
 	if (started || !supported || !enabled()) return
+	pageNonce = document.querySelector('script[nonce]')?.nonce
 	resetViewTransition()
 	navigation.addEventListener('navigate', onNavigate)
 	started = true
@@ -330,6 +332,7 @@ export function runScripts() {
 		)
 		const syncScript = document.body.lastElementChild
 		syncScript.__new = true
+		if (pageNonce) syncScript.setAttribute('nonce', pageNonce)
 		runnable.push(syncScript)
 	}
 
@@ -344,7 +347,8 @@ export function runScripts() {
 				const p = new Promise((r) => newScript.onload = newScript.onerror = r)
 				wait = wait.then(() => p)
 			}
-			newScript.setAttribute(attr.name, attr.value)
+			// browsers hide a connected script's nonce attribute; the property keeps it
+			newScript.setAttribute(attr.name, attr.name === 'nonce' ? script.nonce : attr.value)
 		}
 		script.replaceWith(newScript)
 	}

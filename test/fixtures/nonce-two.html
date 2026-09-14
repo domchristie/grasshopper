@@ -7,10 +7,13 @@
 	<meta name="hop" content="true" />
 	<link nonce="{{nonce}}" rel="stylesheet" href="/fixtures/styles.css" />
 	<script nonce="{{nonce}}">document.__nonceScriptCount = (document.__nonceScriptCount || 0) + 1</script>
+	<script nonce="{{nonce}}">document.__headScript = true</script>
 </head>
 <body>
 	<h1>Nonce Page Two</h1>
 	<a href="nonce.html">Go to Nonce One</a>
+	<script nonce="{{nonce}}">document.__bodyScript = true</script>
+	<script nonce="{{nonce}}" type="module">document.__moduleScript = true</script>
 	<script>document.__noNonce = true</script>
 	<script nonce="wrong">document.__wrongNonce = true</script>
 </body>

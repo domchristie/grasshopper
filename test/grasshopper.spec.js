@@ -1622,6 +1622,34 @@ test.describe('Nonce Attributes', () => {
 					.toEqual([undefined, undefined])
 			})
 
+			test('new scripts with the response nonce run', async ({ page }) => {
+				test.skip(mode === 'fresh', 'needs nonce adoption')
+				await page.goto(`/csp/${mode}/nonce.html`)
+				const loaded = page.evaluate(() => new Promise((resolve) => {
+					document.addEventListener('hop:load', () => resolve(), { once: true })
+				}))
+				await page.click('a[href="nonce-two.html"]')
+				await loaded
+				expect(await page.evaluate(() => [document.__headScript, document.__bodyScript]))
+					.toEqual([true, true])
+			})
+
+			test('inline module scripts run without a CSP violation', async ({ page }) => {
+				test.skip(mode === 'fresh', 'needs nonce adoption')
+				const violations = []
+				page.on('console', (msg) => {
+					if (msg.text().includes('data:application/javascript')) violations.push(msg.text())
+				})
+				await page.goto(`/csp/${mode}/nonce.html`)
+				const loaded = page.evaluate(() => new Promise((resolve) => {
+					document.addEventListener('hop:load', () => resolve(), { once: true })
+				}))
+				await page.click('a[href="nonce-two.html"]')
+				await loaded
+				expect(await page.evaluate(() => document.__moduleScript)).toBe(true)
+				expect(violations).toEqual([])
+			})
+
 			test('a tracked element with a nonce does not force a reload', async ({ page }) => {
 				await page.goto(`/csp/${mode}/nonce.html`)
 				const docId = await markDocument(page)
