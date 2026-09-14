@@ -1621,6 +1621,24 @@ test.describe('Nonce Attributes', () => {
 				expect(await page.evaluate(() => [document.__noNonce, document.__wrongNonce]))
 					.toEqual([undefined, undefined])
 			})
+
+			test('a tracked element with a nonce does not force a reload', async ({ page }) => {
+				await page.goto(`/csp/${mode}/nonce.html`)
+				const docId = await markDocument(page)
+				await page.click('a[href="nonce-two.html"]')
+				await expect(page).toHaveTitle('Nonce Two')
+				expect(await getDocumentId(page)).toBe(docId)
+			})
+
+			test('the page nonce is still readable after navigation', async ({ page }) => {
+				await page.goto(`/csp/${mode}/nonce.html`)
+				const docId = await markDocument(page)
+				const nonce = await page.evaluate(() => document.querySelector('script[nonce]').nonce)
+				await page.click('a[href="nonce-two.html"]')
+				await expect(page).toHaveTitle('Nonce Two')
+				expect(await getDocumentId(page)).toBe(docId)
+				expect(await page.evaluate(() => document.querySelector('script[nonce]')?.nonce)).toBe(nonce)
+			})
 		})
 	}
 })
