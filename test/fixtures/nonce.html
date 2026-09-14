@@ -3,13 +3,13 @@
 <head>
 	<title>Nonce</title>
 	<link rel="icon" href="data:,">
-	<script nonce="test123" src="/grasshopper.js" type="module"></script>
+	<script nonce="{{nonce}}" src="/grasshopper.js" type="module"></script>
 	<meta name="hop" content="true" />
-	<link rel="stylesheet" href="/fixtures/styles.css" />
-	<script nonce="test123">document.__nonceScriptCount = (document.__nonceScriptCount || 0) + 1</script>
+	<link nonce="{{nonce}}" rel="stylesheet" href="/fixtures/styles.css" />
+	<script nonce="{{nonce}}">document.__nonceScriptCount = (document.__nonceScriptCount || 0) + 1</script>
 </head>
 <body>
 	<h1>Nonce Page</h1>
-	<a href="/fixtures/nonce-two.html">Go to Nonce Two</a>
+	<a href="nonce-two.html">Go to Nonce Two</a>
 </body>
 </html>

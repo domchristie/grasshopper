@@ -1595,19 +1595,34 @@ test.describe('Lifecycle Event Order', () => {
 })
 
 test.describe('Nonce Attributes', () => {
-	test('scripts with nonce are not re-executed on navigation', async ({ page }) => {
-		await page.goto('/fixtures/nonce.html')
-		const docId = await markDocument(page)
-		// Initial page load runs the inline nonce script once
-		expect(await page.evaluate(() => document.__nonceScriptCount)).toBe(1)
+	for (const mode of ['stable', 'fresh']) {
+		test.describe(`with a ${mode} CSP nonce`, () => {
+			test('scripts with nonce are not re-executed on navigation', async ({ page }) => {
+				await page.goto(`/csp/${mode}/nonce.html`)
+				const docId = await markDocument(page)
+				// Initial page load runs the inline nonce script once
+				expect(await page.evaluate(() => document.__nonceScriptCount)).toBe(1)
 
-		await page.click('a[href="/fixtures/nonce-two.html"]')
-		await expect(page).toHaveTitle('Nonce Two')
-		expect(await getDocumentId(page)).toBe(docId)
+				await page.click('a[href="nonce-two.html"]')
+				await expect(page).toHaveTitle('Nonce Two')
+				expect(await getDocumentId(page)).toBe(docId)
 
-		// The shared inline nonce script should NOT have run again
-		expect(await page.evaluate(() => document.__nonceScriptCount)).toBe(1)
-	})
+				// The shared inline nonce script should NOT have run again
+				expect(await page.evaluate(() => document.__nonceScriptCount)).toBe(1)
+			})
+
+			test('scripts without the response nonce do not run', async ({ page }) => {
+				await page.goto(`/csp/${mode}/nonce.html`)
+				const loaded = page.evaluate(() => new Promise((resolve) => {
+					document.addEventListener('hop:load', () => resolve(), { once: true })
+				}))
+				await page.click('a[href="nonce-two.html"]')
+				await loaded
+				expect(await page.evaluate(() => [document.__noNonce, document.__wrongNonce]))
+					.toEqual([undefined, undefined])
+			})
+		})
+	}
 })
 
 test.describe('Script Execution', () => {
