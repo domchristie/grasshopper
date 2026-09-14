@@ -70,13 +70,13 @@ Add `data-hop-track="reload"` to elements (typically stylesheets or scripts) tha
 
 During navigation, grasshopper compares tracked elements between the current and new document. If any tracked element is missing or different in the new document, a full page reload occurs. This ensures cache-busted assets always load fresh.
 
-`<meta http-equiv="Content-Security-Policy">` tags are always tracked. See [Content Security Policy](#content-security-policy).
-
 ## Content Security Policy
 
-Grasshopper supports nonce-based policies. It reads the page nonce from the first element with a nonce. When a response arrives, elements whose nonce matches the nonce in the response's `Content-Security-Policy` header get the page nonce. All other nonces are removed. So a swap runs what a full page load would, and injected scripts stay blocked. This works with per-request and stable nonces. If the response has no CSP header, no element is trusted.
+Grasshopper supports nonce-based policies. It reads the page nonce from the first element with a nonce. When a response arrives, elements whose nonce matches the nonce in the response's `Content-Security-Policy` header get the page nonce. All other nonces are removed. So a swap runs what a full page load would, and injected scripts stay blocked. This works with per-request and stable nonces.
 
-`hop.nonce` holds the trusted nonce. Set it in `hop:before-intercept`, `hop:before-fetch`, or `hop:before-response`. For example, to read it from a custom header:
+A page cannot change its policy. So grasshopper falls back to a full page load (reason `csp-changed`) when the `<meta http-equiv="Content-Security-Policy">` tags differ, or when only one of the page and the response uses nonces. Cancel [`hop:before-fallback`](#hopbefore-fallback) to stop it.
+
+`hop.nonce` holds the trusted nonce, and controls the nonce check. Set it in `hop:before-intercept`, `hop:before-fetch`, or `hop:before-response`. For example, to read it from a custom header:
 
 ```js
 document.addEventListener('hop:before-response', (e) => {
@@ -84,12 +84,12 @@ document.addEventListener('hop:before-response', (e) => {
 })
 ```
 
-A page cannot drop or replace a policy. So if a `<meta http-equiv="Content-Security-Policy">` tag changes or is missing in the new document, a full page reload occurs.
-
 **Limitations:**
 - `style` attributes need `'unsafe-inline'` or `'unsafe-hashes'`
 - Hash-based policies must allow the hashes of every page
 - Scripts and styles must share one nonce
+- A meta policy with per-request nonces falls back on each navigation. Use a header instead.
+- A page under a nonce header with no nonced element falls back on each navigation. Add one, for example `<meta name="csp-nonce" nonce="…">`.
 - With per-request nonces, Chromium logs a harmless violation for each inline `<style>` in a response, because it checks the policy while it parses
 - Trusted Types are not supported
 
@@ -248,6 +248,7 @@ Fires when grasshopper will not swap the response, just before it performs a sta
 | `unsupported-media-type` | The response is not `text/html` or `application/xhtml+xml`. `hop.response` has an unread body. |
 | `cross-origin-redirect` | The response redirected to a different origin. `hop.response` has an unread body. |
 | `disabled` | The destination document does not opt in with `<meta name="hop" content="true">`. The body is already read — use `hop.doc`. |
+| `csp-changed` | The response's Content Security Policy differs from the page's. See [Content Security Policy](#content-security-policy). The body is already read — use `hop.doc`. |
 
 The default behavior is a full browser navigation to the response URL. Cancel to prevent it and handle the response yourself:
 

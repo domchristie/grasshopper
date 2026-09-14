@@ -170,11 +170,13 @@ async function loadDoc(hop) {
 		const text = await hop.response.text()
 		hop.doc = parser.parseFromString(text, mediaType)
 		hop.doc.querySelectorAll('noscript').forEach((el) => el.remove())
-		adoptNonces(hop.doc, hop.nonce)
 
 		if (!enabled(hop.doc))
 			throw await tryFallback(hop, 'disabled')
+		if (cspChanged(hop))
+			throw await tryFallback(hop, 'csp-changed')
 
+		adoptNonces(hop.doc, hop.nonce)
 		await until(Promise.all(preloadStyles(hop.doc)), hop.signal)
 		send(hop, 'fetch-load')
 	} catch(error) {
@@ -431,6 +433,13 @@ function trackedElementsChanged(doc) {
 	return oldEls.some(oldEl => !newEls.some(newEl => isSameNode(newEl, oldEl)))
 }
 
+// A page cannot change its CSP, so a response with a different policy needs a full load
+function cspChanged(hop) {
+	const metas = (doc) => [...doc.querySelectorAll('meta[http-equiv="content-security-policy" i]')]
+		.map(el => el.content).join()
+	return metas(document) !== metas(hop.doc) || !pageNonce !== !hop.nonce
+}
+
 // Nonces change per response and browsers hide them, so compare without them
 const isSameNode = (a, b) => withoutNonce(a).isEqualNode(withoutNonce(b))
 
@@ -467,6 +476,7 @@ const EXCEPTIONS = {
 	'attachment': ['Response is an attachment', 'NotSupportedError'],
 	'unsupported-media-type': ['Unsupported media type', 'NotSupportedError'],
 	'cross-origin-redirect': ['Redirected to a different origin', 'SecurityError'],
+	'csp-changed': ['Content Security Policy changed', 'SecurityError'],
 	'disabled': ['Destination document has disabled Grasshopper', 'NotAllowedError']
 }
 function exception(reason, detail) {
