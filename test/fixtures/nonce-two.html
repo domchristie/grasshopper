@@ -8,10 +8,15 @@
 	<link nonce="{{nonce}}" rel="stylesheet" href="/fixtures/styles.css" />
 	<script nonce="{{nonce}}">document.__nonceScriptCount = (document.__nonceScriptCount || 0) + 1</script>
 	<script nonce="{{nonce}}">document.__headScript = true</script>
+	<link nonce="{{nonce}}" rel="stylesheet" href="/fixtures/nonce.css" />
+	<style nonce="{{nonce}}">#inline { color: rgb(4, 5, 6); }</style>
 </head>
 <body>
 	<h1>Nonce Page Two</h1>
 	<a href="nonce.html">Go to Nonce One</a>
+	<p id="linked">Linked</p>
+	<p id="inline">Inline</p>
+	<div id="shadow-host"><template shadowrootmode="open"><style nonce="{{nonce}}">p { color: rgb(7, 8, 9); }</style><p>Shadow</p></template></div>
 	<script nonce="{{nonce}}">document.__bodyScript = true</script>
 	<script nonce="{{nonce}}" type="module">document.__moduleScript = true</script>
 	<script>document.__noNonce = true</script>

@@ -147,6 +147,7 @@ async function loadDoc(hop) {
 		send(hop, 'fetch-start')
 
 		hop.response = await fetch(hop.to.href, hop)
+		hop.nonce ??= hop.response.headers.get('content-security-policy')?.match(/'nonce-([^']+)'/)?.[1]
 
 		if (!await sendInterceptable(hop, 'before-response'))
 			throw exception('before-response')
@@ -169,6 +170,7 @@ async function loadDoc(hop) {
 		const text = await hop.response.text()
 		hop.doc = parser.parseFromString(text, mediaType)
 		hop.doc.querySelectorAll('noscript').forEach((el) => el.remove())
+		adoptNonces(hop.doc, hop.nonce)
 
 		if (!enabled(hop.doc))
 			throw await tryFallback(hop, 'disabled')
@@ -201,9 +203,19 @@ function preloadStyles(doc) {
 			link.setAttribute('rel', 'preload')
 			link.setAttribute('as', 'style')
 			link.setAttribute('href', el.getAttribute('href'))
+			if (el.nonce) link.setAttribute('nonce', el.nonce)
 			document.head.append(link)
 			return new Promise((resolve) => link.onload = link.onerror = resolve)
 		})
+}
+
+// The server marks trusted elements with its nonce. Give them this page's
+// nonce and remove all other nonces, as a full page load would.
+function adoptNonces(root, nonce) {
+	if (!pageNonce) return
+	for (const el of root.querySelectorAll('[nonce]'))
+		el.getAttribute('nonce') === nonce ? el.setAttribute('nonce', pageNonce) : el.removeAttribute('nonce')
+	for (const template of root.querySelectorAll('template')) adoptNonces(template.content, nonce)
 }
 
 async function startViewTransition(options, hop) {
