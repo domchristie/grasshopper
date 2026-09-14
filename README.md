@@ -74,7 +74,7 @@ During navigation, grasshopper compares tracked elements between the current and
 
 ## Content Security Policy
 
-Grasshopper supports nonce-based policies. It reads the page nonce from the first `script[nonce]`. When a response arrives, elements whose nonce matches the nonce in the response's `Content-Security-Policy` header get the page nonce. All other nonces are removed. So a swap runs what a full page load would, and injected scripts stay blocked. This works with per-request and stable nonces. If the response has no CSP header, no element is trusted.
+Grasshopper supports nonce-based policies. It reads the page nonce from the first element with a nonce. When a response arrives, elements whose nonce matches the nonce in the response's `Content-Security-Policy` header get the page nonce. All other nonces are removed. So a swap runs what a full page load would, and injected scripts stay blocked. This works with per-request and stable nonces. If the response has no CSP header, no element is trusted.
 
 `hop.nonce` holds the trusted nonce. Set it in `hop:before-intercept`, `hop:before-fetch`, or `hop:before-response`. For example, to read it from a custom header:
 

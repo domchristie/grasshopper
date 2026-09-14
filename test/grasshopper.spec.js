@@ -1702,6 +1702,19 @@ test.describe('Nonce Attributes', () => {
 			})
 		})
 	}
+
+	test('styles apply when only styles have a nonce', async ({ page }) => {
+		const violations = []
+		page.on('console', (msg) => msg.text().includes('stylesheet') && violations.push(msg.text()))
+		await page.goto('/csp/style-only/nonce-styles.html')
+		await clickAndLoad(page, 'a[href="nonce-two.html"]')
+		expect(await page.evaluate(() => [
+			getComputedStyle(document.querySelector('#linked')).color,
+			getComputedStyle(document.querySelector('#inline')).color,
+			getComputedStyle(document.querySelector('#shadow-host').shadowRoot.querySelector('p')).color
+		])).toEqual(['rgb(1, 2, 3)', 'rgb(4, 5, 6)', 'rgb(7, 8, 9)'])
+		expect(violations).toEqual([])
+	})
 })
 
 test.describe('Script Execution', () => {

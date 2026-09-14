@@ -14,7 +14,7 @@ let pageNonce
 
 export function start() {
 	if (started || !supported || !enabled()) return
-	pageNonce = document.querySelector('script[nonce]')?.nonce
+	pageNonce = document.querySelector('[nonce]')?.nonce
 	resetViewTransition()
 	navigation.addEventListener('navigate', onNavigate)
 	started = true
