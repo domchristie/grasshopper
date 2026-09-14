@@ -212,7 +212,7 @@ function preloadStyles(doc) {
 }
 
 // The server marks trusted elements with its nonce. Give them this page's
-// nonce and remove all other nonces, as a full page load would.
+// nonce and remove all other nonces.
 function adoptNonces(root, nonce) {
 	if (!pageNonce) return
 	for (const el of root.querySelectorAll('[nonce]'))
@@ -433,7 +433,6 @@ function trackedElementsChanged(doc) {
 	return oldEls.some(oldEl => !newEls.some(newEl => isSameNode(newEl, oldEl)))
 }
 
-// A page cannot change its CSP, so a response with a different policy needs a full load
 function cspChanged(hop) {
 	const metas = (doc) => [...doc.querySelectorAll('meta[http-equiv="content-security-policy" i]')]
 		.map(el => el.content).join()
