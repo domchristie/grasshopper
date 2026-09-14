@@ -70,6 +70,29 @@ Add `data-hop-track="reload"` to elements (typically stylesheets or scripts) tha
 
 During navigation, grasshopper compares tracked elements between the current and new document. If any tracked element is missing or different in the new document, a full page reload occurs. This ensures cache-busted assets always load fresh.
 
+`<meta http-equiv="Content-Security-Policy">` tags are always tracked. See [Content Security Policy](#content-security-policy).
+
+## Content Security Policy
+
+Grasshopper supports nonce-based policies. It reads the page nonce from the first `script[nonce]`. When a response arrives, elements whose nonce matches the nonce in the response's `Content-Security-Policy` header get the page nonce. All other nonces are removed. So a swap runs what a full page load would, and injected scripts stay blocked. This works with per-request and stable nonces. If the response has no CSP header, no element is trusted.
+
+`hop.nonce` holds the trusted nonce. Set it in `hop:before-intercept`, `hop:before-fetch`, or `hop:before-response`. For example, to read it from a custom header:
+
+```js
+document.addEventListener('hop:before-response', (e) => {
+  e.detail.hop.nonce = e.detail.hop.response.headers.get('x-csp-nonce')
+})
+```
+
+A page cannot drop or replace a policy. So if a `<meta http-equiv="Content-Security-Policy">` tag changes or is missing in the new document, a full page reload occurs.
+
+**Limitations:**
+- `style` attributes need `'unsafe-inline'` or `'unsafe-hashes'`
+- Hash-based policies must allow the hashes of every page
+- Scripts and styles must share one nonce
+- With per-request nonces, Chromium logs a harmless violation for each inline `<style>` in a response, because it checks the policy while it parses
+- Trusted Types are not supported
+
 ## Scroll on Refresh
 
 A "refresh" is a replace navigation to the same pathname. By default, scroll resets to the top or to a given fragment. To preserve scroll position on refresh:
@@ -304,6 +327,7 @@ The `hop` object is available via `e.detail.hop` in all events. It is also passe
 | `signal` | `AbortSignal` | The abort signal for the fetch request. Available from `hop:before-intercept` onwards. |
 | `abort` | `function` | Aborts this navigation. Takes an optional reason. See [Canceling, Intercepting, and Aborting](#canceling-intercepting-and-aborting). |
 | `response` | `Response \| undefined` | The fetch response. Available from `hop:before-response` onwards. |
+| `nonce` | `string \| undefined` | The response's trusted CSP nonce. Defaults to the nonce in its `Content-Security-Policy` header. See [Content Security Policy](#content-security-policy). |
 | `doc` | `Document \| undefined` | The parsed destination document. Available from `hop:fetch-load` onwards, or from `hop:before-fallback` when the reason is `disabled`. |
 | `navEvent` | `NavigateEvent` | The underlying [NavigateEvent](https://developer.mozilla.org/en-US/docs/Web/API/NavigateEvent). |
 
