@@ -1743,6 +1743,26 @@ test.describe('CSP Changes', () => {
 		})
 	}
 
+	test('a response with a different script nonce policy falls back before adopting nonces', async ({ page }) => {
+		await page.goto('/csp/stable/nonce.html')
+		const docId = await markDocument(page)
+		const { detail } = await watchFallback(page)
+		await page.evaluate(() => {
+			const link = document.createElement('a')
+			link.href = '/csp/style-only/nonce-two.html'
+			document.body.append(link)
+			link.click()
+		})
+		expect(await detail).toEqual({ reason: 'csp-changed', hasHop: true, hasError: true })
+		await expect(page).toHaveTitle('Nonce Two')
+		expect(await getDocumentId(page)).not.toBe(docId)
+		expect(await page.evaluate(() => [
+			document.__headScript,
+			document.__bodyScript,
+			document.__moduleScript
+		])).toEqual([undefined, undefined, undefined])
+	})
+
 	test('canceling hop:before-fallback keeps the page and its policy', async ({ page }) => {
 		await page.goto('/csp/stable/nonce.html')
 		const docId = await markDocument(page)

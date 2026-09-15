@@ -11,10 +11,14 @@ let abortController
 let viewTransition
 let bypass
 let pageNonce
+let pageScriptNonce
+let pageStyleNonce
 
 export function start() {
 	if (started || !supported || !enabled()) return
-	pageNonce = document.querySelector('[nonce]')?.nonce
+	pageScriptNonce = document.querySelector('script[nonce]')?.nonce
+	pageStyleNonce = document.querySelector('style[nonce], link[rel=stylesheet][nonce]')?.nonce
+	pageNonce = pageScriptNonce || pageStyleNonce
 	resetViewTransition()
 	navigation.addEventListener('navigate', onNavigate)
 	started = true
@@ -147,7 +151,6 @@ async function loadDoc(hop) {
 		send(hop, 'fetch-start')
 
 		hop.response = await fetch(hop.to.href, hop)
-		hop.nonce ??= hop.response.headers.get('content-security-policy')?.match(/'nonce-([^']+)'/)?.[1]
 
 		if (!await sendInterceptable(hop, 'before-response'))
 			throw exception('before-response')
@@ -176,7 +179,7 @@ async function loadDoc(hop) {
 		if (cspChanged(hop))
 			throw await tryFallback(hop, 'csp-changed')
 
-		adoptNonces(hop.doc, hop.nonce)
+		adoptNonces(hop.doc, trustedNonces(hop))
 		await until(Promise.all(preloadStyles(hop.doc)), hop.signal)
 		send(hop, 'fetch-load')
 	} catch(error) {
@@ -213,11 +216,16 @@ function preloadStyles(doc) {
 
 // The server marks trusted elements with its nonce. Give them this page's
 // nonce and remove all other nonces.
-function adoptNonces(root, nonce) {
+function adoptNonces(root, nonces) {
 	if (!pageNonce) return
-	for (const el of root.querySelectorAll('[nonce]'))
-		el.getAttribute('nonce') === nonce ? el.setAttribute('nonce', pageNonce) : el.removeAttribute('nonce')
-	for (const template of root.querySelectorAll('template')) adoptNonces(template.content, nonce)
+	for (const el of root.querySelectorAll('[nonce]')) {
+		const nonce = trustedNonce(el, nonces)
+		const pageNonce = pageTrustedNonce(el)
+		nonce && pageNonce && el.getAttribute('nonce') === nonce
+			? el.setAttribute('nonce', pageNonce)
+			: el.removeAttribute('nonce')
+	}
+	for (const template of root.querySelectorAll('template')) adoptNonces(template.content, nonces)
 }
 
 async function startViewTransition(options, hop) {
@@ -436,7 +444,44 @@ function trackedElementsChanged(doc) {
 function cspChanged(hop) {
 	const metas = (doc) => [...doc.querySelectorAll('meta[http-equiv="content-security-policy" i]')]
 		.map(el => el.content).join()
-	return metas(document) !== metas(hop.doc) || !pageNonce !== !hop.nonce
+	const nonces = trustedNonces(hop)
+	return metas(document) !== metas(hop.doc)
+		|| !pageScriptNonce !== !nonces.script
+		|| !pageStyleNonce !== !nonces.style
+}
+
+function trustedNonces(hop) {
+	if (hop.nonce != null) return { script: hop.nonce, style: hop.nonce }
+	const directives = parseCSP(hop.response.headers.get('content-security-policy'))
+	return {
+		script: directiveNonce(directives, ['script-src-elem', 'script-src', 'default-src']),
+		style: directiveNonce(directives, ['style-src-elem', 'style-src', 'default-src'])
+	}
+}
+
+function parseCSP(policy) {
+	return (policy || '').split(';').reduce((directives, directive) => {
+		const [name, ...values] = directive.trim().split(/\s+/)
+		if (name) directives.set(name.toLowerCase(), values)
+		return directives
+	}, new Map())
+}
+
+function directiveNonce(directives, names) {
+	for (const name of names) {
+		const nonce = directives.get(name)?.find(value => /^'nonce-[^']+'$/.test(value))
+		if (nonce) return nonce.slice(7, -1)
+	}
+}
+
+function trustedNonce(el, nonces) {
+	if (el.localName === 'script') return nonces.script
+	if (el.localName === 'style' || el.matches('link[rel=stylesheet]')) return nonces.style
+}
+
+function pageTrustedNonce(el) {
+	if (el.localName === 'script') return pageScriptNonce
+	if (el.localName === 'style' || el.matches('link[rel=stylesheet]')) return pageStyleNonce
 }
 
 // Nonces change per response and browsers hide them, so compare without them
