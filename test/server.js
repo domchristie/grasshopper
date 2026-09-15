@@ -37,6 +37,23 @@ const server = createServer(async (req, res) => {
       return serveFile(res, join(ROOT, 'fixtures', 'test_seq-3341-7.mp3'))
     }
 
+    // Fixtures under a nonce-based CSP. /csp/stable/ keeps one nonce, as a
+    // per-session nonce would. /csp/fresh/ makes a new nonce for each response.
+    // /csp/style-only/ does too, but only styles need it.
+    const csp = pathname.match(/^\/csp\/(stable|fresh|style-only)\/([\w-]+\.html)$/)
+    if (csp) {
+      const [, mode, file] = csp
+      const nonce = mode === 'stable' ? 'stable' : crypto.randomUUID()
+      const scriptSrc = mode === 'style-only' ? "'self'" : `'nonce-${nonce}'`
+      log(req, 200, 'csp', `${mode} fixtures/${file}`)
+      const html = await readFile(join(ROOT, 'fixtures', file), 'utf8')
+      res.writeHead(200, {
+        'Content-Type': MIME['.html'],
+        'Content-Security-Policy': `script-src ${scriptSrc}; style-src 'nonce-${nonce}'`,
+      })
+      return res.end(html.replaceAll('{{nonce}}', nonce))
+    }
+
     // Static files under /fixtures/
     if (pathname.startsWith('/fixtures/')) {
       const rel = pathname.slice('/fixtures/'.length)

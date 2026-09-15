@@ -19,6 +19,15 @@ async function getDocumentId(page) {
 	return await page.evaluate(() => document.__testId)
 }
 
+// Clicks, then waits for hop:load, so the new page's scripts have run
+async function clickAndLoad(page, selector) {
+	const loaded = page.evaluate(() => new Promise((resolve) => {
+		document.addEventListener('hop:load', () => resolve(), { once: true })
+	}))
+	await page.click(selector)
+	await loaded
+}
+
 // Forces the non-precommit code path (Safari, and Chrome before 141)
 const forceNoPrecommit = (page) =>
 	page.addInitScript(() => { delete self.NavigationPrecommitController })
@@ -273,7 +282,7 @@ test.describe('Fallback', () => {
 	test('data-hop="false" link is not intercepted', async ({ page }) => {
 		await page.goto('/')
 		const docId = await markDocument(page)
-		await page.click('a[data-hop="false"]')
+		await page.click('a[href="/fixtures/two.html"][data-hop="false"]')
 		await expect(page).toHaveTitle('Two')
 		expect(await getDocumentId(page)).not.toBe(docId)
 	})
@@ -1595,18 +1604,172 @@ test.describe('Lifecycle Event Order', () => {
 })
 
 test.describe('Nonce Attributes', () => {
-	test('scripts with nonce are not re-executed on navigation', async ({ page }) => {
-		await page.goto('/fixtures/nonce.html')
+	for (const mode of ['stable', 'fresh']) {
+		test.describe(`with a ${mode} CSP nonce`, () => {
+			test('scripts with nonce are not re-executed on navigation', async ({ page }) => {
+				await page.goto(`/csp/${mode}/nonce.html`)
+				const docId = await markDocument(page)
+				// Initial page load runs the inline nonce script once
+				expect(await page.evaluate(() => document.__nonceScriptCount)).toBe(1)
+
+				await page.click('a[href="nonce-two.html"]')
+				await expect(page).toHaveTitle('Nonce Two')
+				expect(await getDocumentId(page)).toBe(docId)
+
+				// The shared inline nonce script should NOT have run again
+				expect(await page.evaluate(() => document.__nonceScriptCount)).toBe(1)
+			})
+
+			test('scripts without the response nonce do not run', async ({ page }) => {
+				await page.goto(`/csp/${mode}/nonce.html`)
+				await clickAndLoad(page, 'a[href="nonce-two.html"]')
+				expect(await page.evaluate(() => [document.__noNonce, document.__wrongNonce]))
+					.toEqual([undefined, undefined])
+			})
+
+			test('new scripts with the response nonce run', async ({ page }) => {
+				await page.goto(`/csp/${mode}/nonce.html`)
+				await clickAndLoad(page, 'a[href="nonce-two.html"]')
+				expect(await page.evaluate(() => [document.__headScript, document.__bodyScript]))
+					.toEqual([true, true])
+			})
+
+			test('inline module scripts run without a CSP violation', async ({ page }) => {
+				const violations = []
+				page.on('console', (msg) => {
+					if (msg.text().includes('data:application/javascript')) violations.push(msg.text())
+				})
+				await page.goto(`/csp/${mode}/nonce.html`)
+				await clickAndLoad(page, 'a[href="nonce-two.html"]')
+				expect(await page.evaluate(() => document.__moduleScript)).toBe(true)
+				expect(violations).toEqual([])
+			})
+
+			test('styles with the response nonce apply, and stylesheets load without a CSP violation', async ({ page }) => {
+				const violations = []
+				page.on('console', (msg) => msg.text().includes('stylesheet') && violations.push(msg.text()))
+				await page.goto(`/csp/${mode}/nonce.html`)
+				await clickAndLoad(page, 'a[href="nonce-two.html"]')
+				expect(await page.evaluate(() => [
+					getComputedStyle(document.querySelector('#linked')).color,
+					getComputedStyle(document.querySelector('#inline')).color,
+					getComputedStyle(document.querySelector('#shadow-host').shadowRoot.querySelector('p')).color
+				])).toEqual(['rgb(1, 2, 3)', 'rgb(4, 5, 6)', 'rgb(7, 8, 9)'])
+				expect(violations).toEqual([])
+			})
+
+			test('a script with the page nonce, not the response nonce, does not run', async ({ page }) => {
+				test.skip(mode === 'stable', 'the page and response nonces are the same')
+				await page.goto(`/csp/${mode}/nonce.html`)
+				const pageNonce = await page.evaluate(() => document.querySelector('script[nonce]').nonce)
+				await page.route('**/nonce-two.html', async (route) => {
+					const response = await route.fetch()
+					const body = (await response.text())
+						.replace('</body>', `<script nonce="${pageNonce}">document.__stolenNonce = true</script></body>`)
+					await route.fulfill({ response, body })
+				})
+				await clickAndLoad(page, 'a[href="nonce-two.html"]')
+				expect(await page.evaluate(() => [document.__bodyScript, document.__stolenNonce]))
+					.toEqual([true, undefined])
+			})
+
+			test('hop.nonce sets which nonce the response trusts', async ({ page }) => {
+				await page.goto(`/csp/${mode}/nonce.html`)
+				await page.evaluate(() => document.addEventListener('hop:before-response', (e) => {
+					e.detail.hop.nonce = 'wrong'
+				}))
+				await clickAndLoad(page, 'a[href="nonce-two.html"]')
+				expect(await page.evaluate(() => [document.__wrongNonce, document.__headScript, document.__bodyScript]))
+					.toEqual([true, undefined, undefined])
+			})
+
+			test('a tracked element with a nonce does not force a reload', async ({ page }) => {
+				await page.goto(`/csp/${mode}/nonce.html`)
+				const docId = await markDocument(page)
+				await page.click('a[href="nonce-two.html"]')
+				await expect(page).toHaveTitle('Nonce Two')
+				expect(await getDocumentId(page)).toBe(docId)
+			})
+
+			test('the page nonce is still readable after navigation', async ({ page }) => {
+				await page.goto(`/csp/${mode}/nonce.html`)
+				const docId = await markDocument(page)
+				const nonce = await page.evaluate(() => document.querySelector('script[nonce]').nonce)
+				await page.click('a[href="nonce-two.html"]')
+				await expect(page).toHaveTitle('Nonce Two')
+				expect(await getDocumentId(page)).toBe(docId)
+				expect(await page.evaluate(() => document.querySelector('script[nonce]')?.nonce)).toBe(nonce)
+			})
+		})
+	}
+
+	test('styles apply when only styles have a nonce', async ({ page }) => {
+		const violations = []
+		page.on('console', (msg) => msg.text().includes('stylesheet') && violations.push(msg.text()))
+		await page.goto('/csp/style-only/nonce-styles.html')
+		await clickAndLoad(page, 'a[href="nonce-two.html"]')
+		expect(await page.evaluate(() => [
+			getComputedStyle(document.querySelector('#linked')).color,
+			getComputedStyle(document.querySelector('#inline')).color,
+			getComputedStyle(document.querySelector('#shadow-host').shadowRoot.querySelector('p')).color
+		])).toEqual(['rgb(1, 2, 3)', 'rgb(4, 5, 6)', 'rgb(7, 8, 9)'])
+		expect(violations).toEqual([])
+	})
+})
+
+test.describe('CSP Changes', () => {
+	test('same CSP meta keeps same document', async ({ page }) => {
+		await page.goto('/fixtures/csp-meta.html')
 		const docId = await markDocument(page)
-		// Initial page load runs the inline nonce script once
-		expect(await page.evaluate(() => document.__nonceScriptCount)).toBe(1)
-
-		await page.click('a[href="/fixtures/nonce-two.html"]')
-		await expect(page).toHaveTitle('Nonce Two')
+		await page.click('a[href="/fixtures/csp-meta-same.html"]')
+		await expect(page).toHaveTitle('CSP Meta Same')
 		expect(await getDocumentId(page)).toBe(docId)
+	})
 
-		// The shared inline nonce script should NOT have run again
-		expect(await page.evaluate(() => document.__nonceScriptCount)).toBe(1)
+	for (const [name, from, to, title] of [
+		['a changed CSP meta', '/fixtures/csp-meta.html', '/fixtures/csp-meta-changed.html', 'CSP Meta Changed'],
+		['a CSP meta only in the new page', '/', '/fixtures/csp-meta.html', 'CSP Meta'],
+		['a response that uses nonces, from a page that does not,', '/', '/csp/stable/nonce.html', 'Nonce'],
+		['a response without nonces, from a page that uses them,', '/csp/stable/nonce.html', '/fixtures/two.html', 'Two'],
+	]) {
+		test(`${name} falls back with reason "csp-changed"`, async ({ page }) => {
+			await page.goto(from)
+			const docId = await markDocument(page)
+			const { detail } = await watchFallback(page)
+			await page.click(`a[href="${to}"]`)
+			expect(await detail).toEqual({ reason: 'csp-changed', hasHop: true, hasError: true })
+			await expect(page).toHaveTitle(title)
+			expect(await getDocumentId(page)).not.toBe(docId)
+		})
+	}
+
+	test('canceling hop:before-fallback keeps the page and its policy', async ({ page }) => {
+		await page.goto('/csp/stable/nonce.html')
+		const docId = await markDocument(page)
+		await page.evaluate(() => document.addEventListener('hop:before-fallback', (e) => e.preventDefault()))
+		const settled = waitForSettle(page)
+		await page.click('a[href="/fixtures/two.html"]')
+		expect(await settled).toBe('error')
+		await expect(page).toHaveTitle('Nonce')
+		expect(await getDocumentId(page)).toBe(docId)
+	})
+
+	test('hop.nonce controls the nonce check', async ({ page }) => {
+		await page.goto('/csp/stable/nonce.html')
+		const docId = await markDocument(page)
+		// As when a proxy strips the header: the response has nonces but no policy
+		await page.route('**/nonce-two.html', async (route) => {
+			const response = await route.fetch()
+			const headers = { ...response.headers() }
+			delete headers['content-security-policy']
+			await route.fulfill({ response, headers })
+		})
+		await page.evaluate(() => document.addEventListener('hop:before-response', (e) => {
+			e.detail.hop.nonce = 'stable'
+		}))
+		await clickAndLoad(page, 'a[href="nonce-two.html"]')
+		expect(await getDocumentId(page)).toBe(docId)
+		expect(await page.evaluate(() => document.__bodyScript)).toBe(true)
 	})
 })
 
