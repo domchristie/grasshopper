@@ -10,9 +10,11 @@ let started = false
 let abortController
 let viewTransition
 let bypass
+let pageNonce
 
 export function start() {
 	if (started || !supported || !enabled()) return
+	pageNonce = document.querySelector('[nonce]')?.nonce
 	resetViewTransition()
 	navigation.addEventListener('navigate', onNavigate)
 	started = true
@@ -145,6 +147,9 @@ async function loadDoc(hop) {
 		send(hop, 'fetch-start')
 
 		hop.response = await fetch(hop.to.href, hop)
+		// only a script directive's nonce can make a script trusted
+		hop.nonce ??= hop.response.headers.get('content-security-policy')
+			?.match(/(?:^|[;,])\s*(?:script-src(?:-elem)?|default-src)\s[^;,]*'nonce-([^']+)'/i)?.[1]
 
 		if (!await sendInterceptable(hop, 'before-response'))
 			throw exception('before-response')
@@ -170,7 +175,13 @@ async function loadDoc(hop) {
 
 		if (!enabled(hop.doc))
 			throw await tryFallback(hop, 'disabled')
+		if (cspChanged(hop))
+			throw await tryFallback(hop, 'csp-changed')
 
+		adoptNonces(hop.doc, hop.nonce)
+		// 'strict-dynamic' trusts any script grasshopper creates, so skip those the server did not trust
+		if (/'strict-dynamic'/i.test((hop.response.headers.get('content-security-policy') ?? '') + cspMetas(hop.doc)))
+			for (const script of hop.doc.scripts) script.__blocked = script.nonce !== pageNonce
 		await until(Promise.all(preloadStyles(hop.doc)), hop.signal)
 		send(hop, 'fetch-load')
 	} catch(error) {
@@ -192,19 +203,26 @@ function preloadStyles(doc) {
 	const oldEls = [...document.querySelectorAll('head link[rel=stylesheet]')]
 	const newEls = [...doc.querySelectorAll('head link[rel=stylesheet]')]
 
-	for (const el of oldEls) el.removeAttribute('nonce')
-	for (const el of newEls) el.removeAttribute('nonce')
-
 	return newEls
-		.filter(newEl => !oldEls.some(oldEl => oldEl.isEqualNode(newEl))) // todo: consider persistent stylesheets
+		.filter(newEl => !oldEls.some(oldEl => isSameNode(oldEl, newEl))) // todo: consider persistent stylesheets
 		.map((el) => {
 			let link = document.createElement('link')
 			link.setAttribute('rel', 'preload')
 			link.setAttribute('as', 'style')
 			link.setAttribute('href', el.getAttribute('href'))
+			if (el.nonce) link.setAttribute('nonce', el.nonce)
 			document.head.append(link)
 			return new Promise((resolve) => link.onload = link.onerror = resolve)
 		})
+}
+
+// The server marks trusted elements with its nonce. Give them this page's
+// nonce and remove all other nonces.
+function adoptNonces(root, nonce) {
+	if (!pageNonce) return
+	for (const el of root.querySelectorAll('[nonce]'))
+		el.getAttribute('nonce') === nonce ? el.setAttribute('nonce', pageNonce) : el.removeAttribute('nonce')
+	for (const template of root.querySelectorAll('template')) adoptNonces(template.content, nonce)
 }
 
 async function startViewTransition(options, hop) {
@@ -245,8 +263,7 @@ function swapHeadElements(doc) {
 	const newEls = [...doc.head.children]
 
 	for (const oldEl of oldEls) {
-		oldEl.removeAttribute('nonce')
-		const newEl = newEls.find(newEl => (newEl.removeAttribute('nonce'), newEl.isEqualNode(oldEl)))
+		const newEl = newEls.find(newEl => isSameNode(newEl, oldEl))
 		newEl ? newEl.remove() : oldEl.remove()
 	}
 	flagNewScripts(doc.head.getElementsByTagName('script'))
@@ -315,7 +332,7 @@ async function scroll(hop) {
 
 export function runScripts() {
 	const runnable = [...document.scripts].filter(
-		script => (script).__new && script.dataset.hopEval !== 'false'
+		script => (script).__new && !script.__blocked && script.dataset.hopEval !== 'false'
 	)
 	let wait = Promise.resolve()
 	let needsWaitForInlineModuleScript = false
@@ -334,6 +351,7 @@ export function runScripts() {
 		)
 		const syncScript = document.body.lastElementChild
 		syncScript.__new = true
+		if (pageNonce) syncScript.setAttribute('nonce', pageNonce)
 		runnable.push(syncScript)
 	}
 
@@ -348,7 +366,8 @@ export function runScripts() {
 				const p = new Promise((r) => newScript.onload = newScript.onerror = r)
 				wait = wait.then(() => p)
 			}
-			newScript.setAttribute(attr.name, attr.value)
+			// browsers hide a connected script's nonce attribute; the property keeps it
+			newScript.setAttribute(attr.name, attr.name === 'nonce' ? script.nonce : attr.value)
 		}
 		script.replaceWith(newScript)
 	}
@@ -416,7 +435,25 @@ const isAttachment = (contentDisposition) =>
 function trackedElementsChanged(doc) {
 	const oldEls = [...document.querySelectorAll(`[${TRACK_ATTR}="reload"]`)]
 	const newEls = [...doc.querySelectorAll(`[${TRACK_ATTR}="reload"]`)]
-	return oldEls.some(oldEl => !newEls.some(newEl => newEl.isEqualNode(oldEl)))
+	return oldEls.some(oldEl => !newEls.some(newEl => isSameNode(newEl, oldEl)))
+}
+
+function cspChanged(hop) {
+	return cspMetas(document) !== cspMetas(hop.doc) || !pageNonce !== !hop.nonce
+}
+
+const cspMetas = (doc) => JSON.stringify([
+	...doc.querySelectorAll('meta[http-equiv="content-security-policy" i]')
+].map(el => el.content))
+
+// Nonces change per response and browsers hide them, so compare without them
+const isSameNode = (a, b) => withoutNonce(a).isEqualNode(withoutNonce(b))
+
+function withoutNonce(el) {
+	if (!el.hasAttribute('nonce')) return el
+	const clone = el.cloneNode(true)
+	clone.removeAttribute('nonce')
+	return clone
 }
 
 async function tryFallback(hop, reason, detail) {
@@ -445,6 +482,7 @@ const EXCEPTIONS = {
 	'attachment': ['Response is an attachment', 'NotSupportedError'],
 	'unsupported-media-type': ['Unsupported media type', 'NotSupportedError'],
 	'cross-origin-redirect': ['Redirected to a different origin', 'SecurityError'],
+	'csp-changed': ['Content Security Policy changed', 'SecurityError'],
 	'disabled': ['Destination document has disabled Grasshopper', 'NotAllowedError']
 }
 function exception(reason, detail) {
