@@ -442,9 +442,9 @@ function cspChanged(hop) {
 	return cspMetas(document) !== cspMetas(hop.doc) || !pageNonce !== !hop.nonce
 }
 
-const cspMetas = (doc) => [
+const cspMetas = (doc) => JSON.stringify([
 	...doc.querySelectorAll('meta[http-equiv="content-security-policy" i]')
-].map(el => el.content).join()
+].map(el => el.content))
 
 // Nonces change per response and browsers hide them, so compare without them
 const isSameNode = (a, b) => withoutNonce(a).isEqualNode(withoutNonce(b))
