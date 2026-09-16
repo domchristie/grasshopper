@@ -1604,7 +1604,7 @@ test.describe('Lifecycle Event Order', () => {
 })
 
 test.describe('Nonce Attributes', () => {
-	for (const mode of ['stable', 'fresh']) {
+	for (const mode of ['stable', 'fresh', 'strict']) {
 		test.describe(`with a ${mode} CSP nonce`, () => {
 			test('scripts with nonce are not re-executed on navigation', async ({ page }) => {
 				await page.goto(`/csp/${mode}/nonce.html`)
@@ -1632,6 +1632,13 @@ test.describe('Nonce Attributes', () => {
 				await clickAndLoad(page, 'a[href="nonce-two.html"]')
 				expect(await page.evaluate(() => [document.__headScript, document.__bodyScript]))
 					.toEqual([true, true])
+			})
+
+			test('external scripts run only with the response nonce', async ({ page }) => {
+				await page.goto(`/csp/${mode}/nonce.html`)
+				await clickAndLoad(page, 'a[href="nonce-two.html"]')
+				expect(await page.evaluate(() => [document.__trustedExternal, document.__untrustedExternal]))
+					.toEqual([true, undefined])
 			})
 
 			test('inline module scripts run without a CSP violation', async ({ page }) => {

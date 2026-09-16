@@ -147,7 +147,8 @@ async function loadDoc(hop) {
 		send(hop, 'fetch-start')
 
 		hop.response = await fetch(hop.to.href, hop)
-		hop.nonce ??= hop.response.headers.get('content-security-policy')?.match(/'nonce-([^']+)'/)?.[1]
+		hop.nonce ??= hop.response.headers
+			.get('content-security-policy')?.match(/'nonce-([^']+)'/)?.[1]
 
 		if (!await sendInterceptable(hop, 'before-response'))
 			throw exception('before-response')
@@ -177,6 +178,9 @@ async function loadDoc(hop) {
 			throw await tryFallback(hop, 'csp-changed')
 
 		adoptNonces(hop.doc, hop.nonce)
+		// 'strict-dynamic' trusts any script grasshopper creates, so skip those the server did not trust
+		if (/'strict-dynamic'/.test(hop.response.headers.get('content-security-policy') + cspMetas(hop.doc)))
+			for (const script of hop.doc.scripts) script.__blocked = script.nonce !== pageNonce
 		await until(Promise.all(preloadStyles(hop.doc)), hop.signal)
 		send(hop, 'fetch-load')
 	} catch(error) {
@@ -327,7 +331,7 @@ async function scroll(hop) {
 
 export function runScripts() {
 	const runnable = [...document.scripts].filter(
-		script => (script).__new && script.dataset.hopEval !== 'false'
+		script => (script).__new && !script.__blocked && script.dataset.hopEval !== 'false'
 	)
 	let wait = Promise.resolve()
 	let needsWaitForInlineModuleScript = false
@@ -434,10 +438,12 @@ function trackedElementsChanged(doc) {
 }
 
 function cspChanged(hop) {
-	const metas = (doc) => [...doc.querySelectorAll('meta[http-equiv="content-security-policy" i]')]
-		.map(el => el.content).join()
-	return metas(document) !== metas(hop.doc) || !pageNonce !== !hop.nonce
+	return cspMetas(document) !== cspMetas(hop.doc) || !pageNonce !== !hop.nonce
 }
+
+const cspMetas = (doc) => [
+	...doc.querySelectorAll('meta[http-equiv="content-security-policy" i]')
+].map(el => el.content).join()
 
 // Nonces change per response and browsers hide them, so compare without them
 const isSameNode = (a, b) => withoutNonce(a).isEqualNode(withoutNonce(b))

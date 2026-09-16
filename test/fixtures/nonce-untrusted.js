@@ -1,0 +1,1 @@
+document.__untrustedExternal = true

@@ -40,16 +40,18 @@ const server = createServer(async (req, res) => {
     // Fixtures under a nonce-based CSP. /csp/stable/ keeps one nonce, as a
     // per-session nonce would. /csp/fresh/ makes a new nonce for each response.
     // /csp/style-only/ does too, but only styles need it.
-    const csp = pathname.match(/^\/csp\/(stable|fresh|style-only)\/([\w-]+\.html)$/)
+    // /csp/strict/ is /csp/fresh/ with 'strict-dynamic'.
+    const csp = pathname.match(/^\/csp\/(stable|fresh|style-only|strict)\/([\w-]+\.html)$/)
     if (csp) {
       const [, mode, file] = csp
       const nonce = mode === 'stable' ? 'stable' : crypto.randomUUID()
-      const scriptSrc = mode === 'style-only' ? "'self'" : `'nonce-${nonce}'`
+      const nonceSrc = `'nonce-${nonce}'`
+      const scriptSrc = { 'style-only': "'self'", strict: `${nonceSrc} 'strict-dynamic'` }[mode] ?? nonceSrc
       log(req, 200, 'csp', `${mode} fixtures/${file}`)
       const html = await readFile(join(ROOT, 'fixtures', file), 'utf8')
       res.writeHead(200, {
         'Content-Type': MIME['.html'],
-        'Content-Security-Policy': `script-src ${scriptSrc}; style-src 'nonce-${nonce}'`,
+        'Content-Security-Policy': `script-src ${scriptSrc}; style-src ${nonceSrc}`,
       })
       return res.end(html.replaceAll('{{nonce}}', nonce))
     }

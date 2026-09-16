@@ -19,6 +19,8 @@
 	<div id="shadow-host"><template shadowrootmode="open"><style nonce="{{nonce}}">p { color: rgb(7, 8, 9); }</style><p>Shadow</p></template></div>
 	<script nonce="{{nonce}}">document.__bodyScript = true</script>
 	<script nonce="{{nonce}}" type="module">document.__moduleScript = true</script>
+	<script nonce="{{nonce}}" src="/fixtures/nonce-trusted.js"></script>
+	<script src="/fixtures/nonce-untrusted.js"></script>
 	<script>document.__noNonce = true</script>
 	<script nonce="wrong">document.__wrongNonce = true</script>
 </body>
