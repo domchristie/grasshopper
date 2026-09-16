@@ -148,7 +148,7 @@ async function loadDoc(hop) {
 
 		hop.response = await fetch(hop.to.href, hop)
 		hop.nonce ??= hop.response.headers
-			.get('content-security-policy')?.match(/'nonce-([^']+)'/)?.[1]
+			.get('content-security-policy')?.match(/'nonce-([^']+)'/i)?.[1]
 
 		if (!await sendInterceptable(hop, 'before-response'))
 			throw exception('before-response')
@@ -179,7 +179,7 @@ async function loadDoc(hop) {
 
 		adoptNonces(hop.doc, hop.nonce)
 		// 'strict-dynamic' trusts any script grasshopper creates, so skip those the server did not trust
-		if (/'strict-dynamic'/.test(hop.response.headers.get('content-security-policy') + cspMetas(hop.doc)))
+		if (/'strict-dynamic'/i.test((hop.response.headers.get('content-security-policy') ?? '') + cspMetas(hop.doc)))
 			for (const script of hop.doc.scripts) script.__blocked = script.nonce !== pageNonce
 		await until(Promise.all(preloadStyles(hop.doc)), hop.signal)
 		send(hop, 'fetch-load')
