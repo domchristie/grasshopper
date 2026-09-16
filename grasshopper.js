@@ -147,8 +147,9 @@ async function loadDoc(hop) {
 		send(hop, 'fetch-start')
 
 		hop.response = await fetch(hop.to.href, hop)
-		hop.nonce ??= hop.response.headers
-			.get('content-security-policy')?.match(/'nonce-([^']+)'/i)?.[1]
+		// only a script directive's nonce can make a script trusted
+		hop.nonce ??= hop.response.headers.get('content-security-policy')
+			?.match(/(?:^|[;,])\s*(?:script-src(?:-elem)?|default-src)\s[^;,]*'nonce-([^']+)'/i)?.[1]
 
 		if (!await sendInterceptable(hop, 'before-response'))
 			throw exception('before-response')

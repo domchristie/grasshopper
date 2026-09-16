@@ -1714,6 +1714,12 @@ test.describe('Nonce Attributes', () => {
 		const violations = []
 		page.on('console', (msg) => msg.text().includes('stylesheet') && violations.push(msg.text()))
 		await page.goto('/csp/style-only/nonce-styles.html')
+		// grasshopper only trusts a script directive's nonce, so a style-only
+		// policy needs the trusted nonce to come from style-src
+		await page.evaluate(() => document.addEventListener('hop:before-response', (e) => {
+			e.detail.hop.nonce ??= e.detail.hop.response.headers.get('content-security-policy')
+				?.match(/style-src[^;,]*'nonce-([^']+)'/i)?.[1]
+		}))
 		await clickAndLoad(page, 'a[href="nonce-two.html"]')
 		expect(await page.evaluate(() => [
 			getComputedStyle(document.querySelector('#linked')).color,
@@ -1738,6 +1744,7 @@ test.describe('CSP Changes', () => {
 		['a CSP meta only in the new page', '/', '/fixtures/csp-meta.html', 'CSP Meta'],
 		['a response that uses nonces, from a page that does not,', '/', '/csp/stable/nonce.html', 'Nonce'],
 		['a response without nonces, from a page that uses them,', '/csp/stable/nonce.html', '/fixtures/two.html', 'Two'],
+		['a response whose nonce is only for styles', '/csp/stable/nonce.html', '/csp/style-only/nonce-styles.html', 'Nonce Styles'],
 	]) {
 		test(`${name} falls back with reason "csp-changed"`, async ({ page }) => {
 			await page.goto(from)

@@ -72,7 +72,7 @@ During navigation, grasshopper compares tracked elements between the current and
 
 ## Content Security Policy
 
-Grasshopper supports nonce-based policies. It reads the page nonce from the first element with a nonce. When a response arrives, elements whose nonce matches the nonce in the response's `Content-Security-Policy` header get the page nonce. All other nonces are removed. So a swap runs what a full page load would, and injected scripts stay blocked. This works with per-request and stable nonces. With `'strict-dynamic'`, grasshopper runs only the scripts that carry the trusted nonce.
+Grasshopper supports nonce-based policies. It reads the page nonce from the first element with a nonce. When a response arrives, elements whose nonce matches the nonce in the script directive (`script-src-elem`, `script-src`, or `default-src`) of the response's `Content-Security-Policy` header get the page nonce. All other nonces are removed. So a swap runs what a full page load would, and injected scripts stay blocked. This works with per-request and stable nonces. With `'strict-dynamic'`, grasshopper runs only the scripts that carry the trusted nonce.
 
 A page cannot change its policy. So grasshopper falls back to a full page load (reason `csp-changed`) when the `<meta http-equiv="Content-Security-Policy">` tags differ, or when only one of the page and the response uses nonces. Cancel [`hop:before-fallback`](#hopbefore-fallback) to stop it.
 
@@ -81,6 +81,15 @@ A page cannot change its policy. So grasshopper falls back to a full page load (
 ```js
 document.addEventListener('hop:before-response', (e) => {
   e.detail.hop.nonce = e.detail.hop.response.headers.get('x-csp-nonce')
+})
+```
+
+A policy whose nonce is only in `style-src` sets no trusted nonce, so grasshopper falls back on each navigation. Take the nonce from `style-src` instead:
+
+```js
+document.addEventListener('hop:before-response', (e) => {
+  e.detail.hop.nonce ??= e.detail.hop.response.headers.get('content-security-policy')
+    ?.match(/style-src[^;,]*'nonce-([^']+)'/i)?.[1]
 })
 ```
 
