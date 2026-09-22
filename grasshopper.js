@@ -192,11 +192,8 @@ function preloadStyles(doc) {
 	const oldEls = [...document.querySelectorAll('head link[rel=stylesheet]')]
 	const newEls = [...doc.querySelectorAll('head link[rel=stylesheet]')]
 
-	for (const el of oldEls) el.removeAttribute('nonce')
-	for (const el of newEls) el.removeAttribute('nonce')
-
 	return newEls
-		.filter(newEl => !oldEls.some(oldEl => oldEl.isEqualNode(newEl))) // todo: consider persistent stylesheets
+		.filter(newEl => !oldEls.some(oldEl => isSameNode(oldEl, newEl))) // todo: consider persistent stylesheets
 		.map((el) => {
 			let link = document.createElement('link')
 			link.setAttribute('rel', 'preload')
@@ -245,8 +242,7 @@ function swapHeadElements(doc) {
 	const newEls = [...doc.head.children]
 
 	for (const oldEl of oldEls) {
-		oldEl.removeAttribute('nonce')
-		const newEl = newEls.find(newEl => (newEl.removeAttribute('nonce'), newEl.isEqualNode(oldEl)))
+		const newEl = newEls.find(newEl => isSameNode(newEl, oldEl))
 		newEl ? newEl.remove() : oldEl.remove()
 	}
 	flagNewScripts(doc.head.getElementsByTagName('script'))
@@ -416,7 +412,18 @@ const isAttachment = (contentDisposition) =>
 function trackedElementsChanged(doc) {
 	const oldEls = [...document.querySelectorAll(`[${TRACK_ATTR}="reload"]`)]
 	const newEls = [...doc.querySelectorAll(`[${TRACK_ATTR}="reload"]`)]
-	return oldEls.some(oldEl => !newEls.some(newEl => newEl.isEqualNode(oldEl)))
+	return oldEls.some(oldEl => !newEls.some(newEl => isSameNode(newEl, oldEl)))
+}
+
+// A browser hides the nonce of a connected element, and a nonce can change per
+// response, so compare elements without it. Never change the live elements.
+const isSameNode = (a, b) => withoutNonce(a).isEqualNode(withoutNonce(b))
+
+function withoutNonce(el) {
+	if (!el.hasAttribute('nonce')) return el
+	const clone = el.cloneNode(true)
+	clone.removeAttribute('nonce')
+	return clone
 }
 
 async function tryFallback(hop, reason, detail) {
