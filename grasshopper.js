@@ -199,6 +199,8 @@ function preloadStyles(doc) {
 			link.setAttribute('rel', 'preload')
 			link.setAttribute('as', 'style')
 			link.setAttribute('href', el.getAttribute('href'))
+			const nonce = pageNonce('link[nonce], style[nonce]')
+			if (nonce) link.setAttribute('nonce', nonce)
 			document.head.append(link)
 			return new Promise((resolve) => link.onload = link.onerror = resolve)
 		})
@@ -330,6 +332,8 @@ export function runScripts() {
 		)
 		const syncScript = document.body.lastElementChild
 		syncScript.__new = true
+		const nonce = pageNonce('script[nonce]')
+		if (nonce) syncScript.setAttribute('nonce', nonce)
 		runnable.push(syncScript)
 	}
 
@@ -344,7 +348,7 @@ export function runScripts() {
 				const p = new Promise((r) => newScript.onload = newScript.onerror = r)
 				wait = wait.then(() => p)
 			}
-			// a browser hides a connected script's nonce attribute; the property keeps it
+			// the attribute is hidden once connected; the property keeps it
 			newScript.setAttribute(attr.name, attr.name === 'nonce' ? script.nonce : attr.value)
 		}
 		script.replaceWith(newScript)
@@ -416,8 +420,9 @@ function trackedElementsChanged(doc) {
 	return oldEls.some(oldEl => !newEls.some(newEl => isSameNode(newEl, oldEl)))
 }
 
-// A browser hides the nonce of a connected element, and a nonce can change per
-// response, so compare elements without it. Never change the live elements.
+const pageNonce = (selector) => document.querySelector(selector)?.nonce
+
+// nonces are hidden once connected, and can change per response
 const isSameNode = (a, b) => withoutNonce(a).isEqualNode(withoutNonce(b))
 
 function withoutNonce(el) {
