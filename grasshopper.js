@@ -344,7 +344,8 @@ export function runScripts() {
 				const p = new Promise((r) => newScript.onload = newScript.onerror = r)
 				wait = wait.then(() => p)
 			}
-			newScript.setAttribute(attr.name, attr.value)
+			// a browser hides a connected script's nonce attribute; the property keeps it
+			newScript.setAttribute(attr.name, attr.name === 'nonce' ? script.nonce : attr.value)
 		}
 		script.replaceWith(newScript)
 	}
