@@ -84,6 +84,11 @@ document.addEventListener('hop:fetch-load', ({ detail: { hop } }) => {
   const trusted = hop.response.headers.get('content-security-policy')
     ?.match(/'nonce-([^']+)'/)?.[1]
 
+  // under 'strict-dynamic' the browser trusts each script grasshopper creates,
+  // whatever nonce it has, so mark the rest. Drop this loop without 'strict-dynamic'.
+  for (const script of hop.doc.querySelectorAll('script'))
+    if (script.getAttribute('nonce') !== trusted) script.dataset.hopEval = 'false'
+
   for (const el of hop.doc.querySelectorAll('[nonce]')) {
     if (el.getAttribute('nonce') === trusted) el.setAttribute('nonce', pageNonce)
     else el.removeAttribute('nonce')
@@ -91,12 +96,7 @@ document.addEventListener('hop:fetch-load', ({ detail: { hop } }) => {
 })
 ```
 
-Under `'strict-dynamic'`, the browser trusts each script that grasshopper creates, whatever nonce that script has. Mark the other scripts in the same listener, so grasshopper leaves them alone:
-
-```js
-for (const script of hop.doc.querySelectorAll('script'))
-  if (script.getAttribute('nonce') !== trusted) script.dataset.hopEval = 'false'
-```
+The first loop must run before the second. The second loop gives each trusted element the page nonce, so the response nonce is gone once it has run.
 
 **Limits:**
 - `querySelectorAll('[nonce]')` does not look inside a `<template>`. Walk `template.content` as well.
