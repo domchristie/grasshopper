@@ -199,7 +199,8 @@ function preloadStyles(doc) {
 			link.setAttribute('rel', 'preload')
 			link.setAttribute('as', 'style')
 			link.setAttribute('href', el.getAttribute('href'))
-			const nonce = pageNonce('link[nonce], style[nonce]')
+			// a page may have no nonced style of its own; most sites use one nonce for both
+			const nonce = pageNonce('link[nonce], style[nonce]') ?? pageNonce('script[nonce]')
 			if (nonce) link.setAttribute('nonce', nonce)
 			document.head.append(link)
 			return new Promise((resolve) => link.onload = link.onerror = resolve)

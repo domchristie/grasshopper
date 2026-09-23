@@ -1707,6 +1707,18 @@ test.describe('CSP Nonces', () => {
 			[document.__headScript, document.__bodyScript, document.__wrongNonce]
 		)).toEqual([true, true, undefined])
 	})
+
+	// the preload link needs a nonce even when the page itself has no nonced style
+	test('a stylesheet preloads without a CSP violation from a page with no styles', async ({ page }) => {
+		const violations = []
+		page.on('console', (msg) => msg.text().includes('stylesheet') && violations.push(msg.text()))
+		await page.goto('/csp/stable/csp-nonce-nostyle.html')
+		await clickAndLoad(page, 'a[href="csp-nonce-two.html"]')
+		expect(await page.evaluate(() =>
+			getComputedStyle(document.querySelector('#linked')).color
+		)).toBe('rgb(1, 2, 3)')
+		expect(violations).toEqual([])
+	})
 })
 
 test.describe('Script Execution', () => {
