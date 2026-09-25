@@ -23,10 +23,6 @@ Add `data-hop-persist` and a unique `id` to elements that should survive navigat
 
 When navigating to a page that contains an element with the same `id` and `data-hop-persist` attribute, the original element is moved into the new document instead of being replaced. This preserves playback state, event listeners, and any other runtime state.
 
-**Requirements:**
-- The element must have both `data-hop-persist` and `id` attributes
-- The target page must contain a matching `data-hop-persist` and `id` attributes
-
 ## Disabling on Specific Links
 
 Set `data-hop="false"` on links or forms that should use standard browser navigation:
@@ -120,11 +116,6 @@ A "refresh" is a replace navigation to the same pathname. By default, scroll res
 ```
 
 This is useful for filtering, sorting, or making changes in-place.
-
-**Requirements:**
-- The navigation must be to the same pathname
-- The triggering element must have `data-hop-type="replace"` (or be inside one)
-- The page must have `<meta name="hop-refresh-scroll" content="preserve">`
 
 ## JavaScript API
 
@@ -347,10 +338,7 @@ The load phase (fetch, parse, and stylesheet preload) has a default timeout of `
 
 ## Navigation ID
 
-Each navigation is assigned a UUID. The ID is:
-
-- Available as `hop.id` in all event details
-- Sent as an `x-hop-id` header with the fetch request
+Each navigation has a UUID. It is in `hop.id`, and it goes out as the `x-hop-id` request header.
 
 ## How It Works
 
