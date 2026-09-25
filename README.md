@@ -72,11 +72,9 @@ During navigation, grasshopper compares tracked elements between the current and
 
 ## Content Security Policy
 
-Grasshopper keeps `nonce` attributes. It does not read a policy, and it does not apply one. It compares elements without their nonce, it copies a script's nonce when it runs that script again, and it gives its own preload link and sync script the nonce of the live page. The browser then makes the same decision it makes on a full page load.
+Grasshopper keeps `nonce` attributes and applies no policy of its own. It compares elements without their nonce, it keeps a script's nonce when it runs that script again, and it gives its own preload link and sync script the nonce of the live page. The browser decides, as it does on a full page load.
 
-A site that uses one nonce for a whole session needs no code.
-
-A site that makes a new nonce for each response must map that nonce onto the page nonce. The browser keeps the policy of the first document for the life of that document, so the new nonce means nothing to it:
+One nonce for a whole session needs no code. A new nonce per response needs a listener, because the browser keeps the policy of the first document:
 
 ```js
 document.addEventListener('hop:fetch-load', ({ detail: { hop } }) => {
@@ -96,15 +94,13 @@ document.addEventListener('hop:fetch-load', ({ detail: { hop } }) => {
 })
 ```
 
-The first loop must run before the second. The second loop gives each trusted element the page nonce, so the response nonce is gone once it has run.
+Keep the loops in this order. The second one replaces the nonce the first one tests.
 
 **Limits:**
-- `querySelectorAll('[nonce]')` does not look inside a `<template>`. Walk `template.content` as well.
-- A script inside `<template shadowrootmode>` runs when grasshopper attaches the shadow root. `data-hop-eval="false"` does not stop it. Remove the script instead.
-- A `<meta http-equiv="Content-Security-Policy">` in the new head enters the live head. The browser then applies both policies. Remove it in the same listener when your pages differ.
-- A `sandbox` policy in the response has no effect after a swap. Read the header in `hop:before-response`. For a full load, cancel the event, call `stop()`, then `location.assign()`.
-- The example above takes the first nonce in the header. Read the nonce of the directive you need when a policy sets more than one.
-- Directives other than script and style do not apply to the new page.
+- `<template>` content is out of reach. `querySelectorAll` does not see it, and a script inside `<template shadowrootmode>` runs when grasshopper attaches the shadow root. Walk `template.content` and remove what you do not trust.
+- A `<meta http-equiv="Content-Security-Policy">` in the new head enters the live head, so the browser applies both policies. Remove it in the same listener when your pages differ.
+- A `sandbox` policy in the response has no effect after a swap. For a full load, cancel `hop:before-response`, call `stop()`, then `location.assign()`.
+- Other directives of the response do not apply after a swap.
 
 ## Scroll on Refresh
 
