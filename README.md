@@ -364,7 +364,6 @@ Each navigation is assigned a UUID. The ID is:
    - Replaces `<body>`, then moves `data-hop-persist` elements from old to new
    - Re-executes new scripts
    - Restores focus and scroll position
-   - Announces page title for screen readers
 
 ## Browser Support
 
