@@ -192,16 +192,16 @@ function preloadStyles(doc) {
 	const oldEls = [...document.querySelectorAll('head link[rel=stylesheet]')]
 	const newEls = [...doc.querySelectorAll('head link[rel=stylesheet]')]
 
-	for (const el of oldEls) el.removeAttribute('nonce')
-	for (const el of newEls) el.removeAttribute('nonce')
-
 	return newEls
-		.filter(newEl => !oldEls.some(oldEl => oldEl.isEqualNode(newEl))) // todo: consider persistent stylesheets
+		.filter(newEl => !oldEls.some(oldEl => isSameNode(oldEl, newEl))) // todo: consider persistent stylesheets
 		.map((el) => {
 			let link = document.createElement('link')
 			link.setAttribute('rel', 'preload')
 			link.setAttribute('as', 'style')
 			link.setAttribute('href', el.getAttribute('href'))
+			// a page may have no nonced style of its own; most sites use one nonce for both
+			const nonce = pageNonce('link[nonce], style[nonce]') ?? pageNonce('script[nonce]')
+			if (nonce) link.setAttribute('nonce', nonce)
 			document.head.append(link)
 			return new Promise((resolve) => link.onload = link.onerror = resolve)
 		})
@@ -245,8 +245,7 @@ function swapHeadElements(doc) {
 	const newEls = [...doc.head.children]
 
 	for (const oldEl of oldEls) {
-		oldEl.removeAttribute('nonce')
-		const newEl = newEls.find(newEl => (newEl.removeAttribute('nonce'), newEl.isEqualNode(oldEl)))
+		const newEl = newEls.find(newEl => isSameNode(newEl, oldEl))
 		newEl ? newEl.remove() : oldEl.remove()
 	}
 	flagNewScripts(doc.head.getElementsByTagName('script'))
@@ -334,6 +333,8 @@ export function runScripts() {
 		)
 		const syncScript = document.body.lastElementChild
 		syncScript.__new = true
+		const nonce = pageNonce('script[nonce]')
+		if (nonce) syncScript.setAttribute('nonce', nonce)
 		runnable.push(syncScript)
 	}
 
@@ -348,7 +349,8 @@ export function runScripts() {
 				const p = new Promise((r) => newScript.onload = newScript.onerror = r)
 				wait = wait.then(() => p)
 			}
-			newScript.setAttribute(attr.name, attr.value)
+			// the attribute is hidden once connected; the property keeps it
+			newScript.setAttribute(attr.name, attr.name === 'nonce' ? script.nonce : attr.value)
 		}
 		script.replaceWith(newScript)
 	}
@@ -416,7 +418,19 @@ const isAttachment = (contentDisposition) =>
 function trackedElementsChanged(doc) {
 	const oldEls = [...document.querySelectorAll(`[${TRACK_ATTR}="reload"]`)]
 	const newEls = [...doc.querySelectorAll(`[${TRACK_ATTR}="reload"]`)]
-	return oldEls.some(oldEl => !newEls.some(newEl => newEl.isEqualNode(oldEl)))
+	return oldEls.some(oldEl => !newEls.some(newEl => isSameNode(newEl, oldEl)))
+}
+
+const pageNonce = (selector) => document.querySelector(selector)?.nonce
+
+// nonces are hidden once connected, and can change per response
+const isSameNode = (a, b) => withoutNonce(a).isEqualNode(withoutNonce(b))
+
+function withoutNonce(el) {
+	if (!el.hasAttribute('nonce')) return el
+	const clone = el.cloneNode(true)
+	clone.removeAttribute('nonce')
+	return clone
 }
 
 async function tryFallback(hop, reason, detail) {

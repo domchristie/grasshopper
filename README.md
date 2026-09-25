@@ -70,6 +70,38 @@ Add `data-hop-track="reload"` to elements (typically stylesheets or scripts) tha
 
 During navigation, grasshopper compares tracked elements between the current and new document. If any tracked element is missing or different in the new document, a full page reload occurs. This ensures cache-busted assets always load fresh.
 
+## Content Security Policy
+
+Grasshopper keeps `nonce` attributes and applies no policy of its own. It compares elements without their nonce, it keeps a script's nonce when it runs that script again, and it gives its own preload link and sync script the nonce of the live page. The browser decides, as it does on a full page load.
+
+One nonce for a whole session needs no code. A new nonce per response needs a listener, because the browser keeps the policy of the first document:
+
+```js
+document.addEventListener('hop:fetch-load', ({ detail: { hop } }) => {
+  const pageNonce = document.querySelector('script[nonce]').nonce
+  const trusted = hop.response.headers.get('content-security-policy')
+    ?.match(/'nonce-([^']+)'/)?.[1]
+
+  // under 'strict-dynamic' the browser trusts each script grasshopper creates,
+  // whatever nonce it has, so mark the rest. Drop this loop without 'strict-dynamic'.
+  for (const script of hop.doc.querySelectorAll('script'))
+    if (script.getAttribute('nonce') !== trusted) script.dataset.hopEval = 'false'
+
+  for (const el of hop.doc.querySelectorAll('[nonce]')) {
+    if (el.getAttribute('nonce') === trusted) el.setAttribute('nonce', pageNonce)
+    else el.removeAttribute('nonce')
+  }
+})
+```
+
+Keep the loops in this order. The second one replaces the nonce the first one tests.
+
+**Limits:**
+- `<template>` content is out of reach. `querySelectorAll` does not see it, and a script inside `<template shadowrootmode>` runs when grasshopper attaches the shadow root. Walk `template.content` and remove what you do not trust.
+- A `<meta http-equiv="Content-Security-Policy">` in the new head enters the live head, so the browser applies both policies. Remove it in the same listener when your pages differ.
+- A `sandbox` policy in the response has no effect after a swap. For a full load, cancel `hop:before-response`, call `stop()`, then `location.assign()`.
+- Other directives of the response do not apply after a swap.
+
 ## Scroll on Refresh
 
 A "refresh" is a replace navigation to the same pathname. By default, scroll resets to the top or to a given fragment. To preserve scroll position on refresh:
@@ -204,6 +236,8 @@ Use `hop.response.clone()` if a listener needs the body, to prevent future read 
 ### `hop:fetch-load`
 
 Fires after the page is fetched, parsed, and new stylesheets are preloaded.
+
+Listeners can change `hop.doc` before the swap. See [Content Security Policy](#content-security-policy).
 
 ### `hop:fetch-error`
 
@@ -344,6 +378,7 @@ Requires the [Navigation API](https://caniuse.com/wf-navigation) and [AbortSigna
 | `data-hop` | `"false"` | Disables fetch navigation on this element and descendants. |
 | `data-hop-type` | `"replace"` | Uses `replaceState` instead of `pushState`. |
 | `data-hop-track` | `"reload"` | Triggers full reload if element changes between pages. |
+| `data-hop-eval` | `"false"` | Stops grasshopper running this script after a swap. |
 
 ## Meta Tags Reference
 
