@@ -23,10 +23,6 @@ Add `data-hop-persist` and a unique `id` to elements that should survive navigat
 
 When navigating to a page that contains an element with the same `id` and `data-hop-persist` attribute, the original element is moved into the new document instead of being replaced. This preserves playback state, event listeners, and any other runtime state.
 
-**Requirements:**
-- The element must have both `data-hop-persist` and `id` attributes
-- The target page must contain a matching `data-hop-persist` and `id` attributes
-
 ## Disabling on Specific Links
 
 Set `data-hop="false"` on links or forms that should use standard browser navigation:
@@ -70,6 +66,25 @@ Add `data-hop-track="reload"` to elements (typically stylesheets or scripts) tha
 
 During navigation, grasshopper compares tracked elements between the current and new document. If any tracked element is missing or different in the new document, a full page reload occurs. This ensures cache-busted assets always load fresh.
 
+## Scroll on Refresh
+
+A "refresh" is a replace navigation to the same pathname. By default, scroll resets to the top or to a given fragment. To preserve scroll position on refresh:
+
+```html
+<head>
+  <meta name="hop" content="true">
+  <meta name="hop-refresh-scroll" content="preserve">
+</head>
+<body>
+  <nav data-hop-type="replace">
+    <a href="?sort=name">Sort by name</a>
+    <a href="?sort=date">Sort by date</a>
+  </nav>
+</body>
+```
+
+This is useful for filtering, sorting, or making changes in-place.
+
 ## Content Security Policy
 
 Grasshopper keeps `nonce` attributes and applies no policy of its own. It compares elements without their nonce, it keeps a script's nonce when it runs that script again, and it gives its own preload link and sync script the nonce of the live page. The browser decides, as it does on a full page load.
@@ -94,37 +109,11 @@ document.addEventListener('hop:fetch-load', ({ detail: { hop } }) => {
 })
 ```
 
-Keep the loops in this order. The second one replaces the nonce the first one tests.
-
 **Limits:**
 - `<template>` content is out of reach. `querySelectorAll` does not see it, and a script inside `<template shadowrootmode>` runs when grasshopper attaches the shadow root. Walk `template.content` and remove what you do not trust.
 - A `<meta http-equiv="Content-Security-Policy">` in the new head enters the live head, so the browser applies both policies. Remove it in the same listener when your pages differ.
 - A `sandbox` policy in the response has no effect after a swap. For a full load, cancel `hop:before-response`, call `stop()`, then `location.assign()`.
 - Other directives of the response do not apply after a swap.
-
-## Scroll on Refresh
-
-A "refresh" is a replace navigation to the same pathname. By default, scroll resets to the top or to a given fragment. To preserve scroll position on refresh:
-
-```html
-<head>
-  <meta name="hop" content="true">
-  <meta name="hop-refresh-scroll" content="preserve">
-</head>
-<body>
-  <nav data-hop-type="replace">
-    <a href="?sort=name">Sort by name</a>
-    <a href="?sort=date">Sort by date</a>
-  </nav>
-</body>
-```
-
-This is useful for filtering, sorting, or making changes in-place.
-
-**Requirements:**
-- The navigation must be to the same pathname
-- The triggering element must have `data-hop-type="replace"` (or be inside one)
-- The page must have `<meta name="hop-refresh-scroll" content="preserve">`
 
 ## JavaScript API
 
@@ -347,10 +336,7 @@ The load phase (fetch, parse, and stylesheet preload) has a default timeout of `
 
 ## Navigation ID
 
-Each navigation is assigned a UUID. The ID is:
-
-- Available as `hop.id` in all event details
-- Sent as an `x-hop-id` header with the fetch request
+Each navigation has a UUID. It is in `hop.id`, and it goes out as the `x-hop-id` request header.
 
 ## How It Works
 
@@ -364,7 +350,6 @@ Each navigation is assigned a UUID. The ID is:
    - Replaces `<body>`, then moves `data-hop-persist` elements from old to new
    - Re-executes new scripts
    - Restores focus and scroll position
-   - Announces page title for screen readers
 
 ## Browser Support
 
