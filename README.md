@@ -66,6 +66,25 @@ Add `data-hop-track="reload"` to elements (typically stylesheets or scripts) tha
 
 During navigation, grasshopper compares tracked elements between the current and new document. If any tracked element is missing or different in the new document, a full page reload occurs. This ensures cache-busted assets always load fresh.
 
+## Scroll on Refresh
+
+A "refresh" is a replace navigation to the same pathname. By default, scroll resets to the top or to a given fragment. To preserve scroll position on refresh:
+
+```html
+<head>
+  <meta name="hop" content="true">
+  <meta name="hop-refresh-scroll" content="preserve">
+</head>
+<body>
+  <nav data-hop-type="replace">
+    <a href="?sort=name">Sort by name</a>
+    <a href="?sort=date">Sort by date</a>
+  </nav>
+</body>
+```
+
+This is useful for filtering, sorting, or making changes in-place.
+
 ## Content Security Policy
 
 Grasshopper keeps `nonce` attributes and applies no policy of its own. It compares elements without their nonce, it keeps a script's nonce when it runs that script again, and it gives its own preload link and sync script the nonce of the live page. The browser decides, as it does on a full page load.
@@ -90,32 +109,11 @@ document.addEventListener('hop:fetch-load', ({ detail: { hop } }) => {
 })
 ```
 
-Keep the loops in this order. The second one replaces the nonce the first one tests.
-
 **Limits:**
 - `<template>` content is out of reach. `querySelectorAll` does not see it, and a script inside `<template shadowrootmode>` runs when grasshopper attaches the shadow root. Walk `template.content` and remove what you do not trust.
 - A `<meta http-equiv="Content-Security-Policy">` in the new head enters the live head, so the browser applies both policies. Remove it in the same listener when your pages differ.
 - A `sandbox` policy in the response has no effect after a swap. For a full load, cancel `hop:before-response`, call `stop()`, then `location.assign()`.
 - Other directives of the response do not apply after a swap.
-
-## Scroll on Refresh
-
-A "refresh" is a replace navigation to the same pathname. By default, scroll resets to the top or to a given fragment. To preserve scroll position on refresh:
-
-```html
-<head>
-  <meta name="hop" content="true">
-  <meta name="hop-refresh-scroll" content="preserve">
-</head>
-<body>
-  <nav data-hop-type="replace">
-    <a href="?sort=name">Sort by name</a>
-    <a href="?sort=date">Sort by date</a>
-  </nav>
-</body>
-```
-
-This is useful for filtering, sorting, or making changes in-place.
 
 ## JavaScript API
 
